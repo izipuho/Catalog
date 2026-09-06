@@ -7,9 +7,9 @@ struct BookBatchEditView: View {
     let publishers: [Publisher]
     let onSave: (ItemBatchEdit, BookBatchEdit) -> Void
 
-    @State private var contributorRole: BookContributorRole = .author
-    @State private var selectedContributor: Person?
-    @State private var contributorShouldClear = false
+    @State private var contributorEdits: [BookContributorBatchEdit] = []
+    @State private var editingContributorIndex: Int?
+    @State private var isPresentingContributorEditor = false
     @State private var selectedSeries: BookSeries?
     @State private var seriesShouldClear = false
     @State private var selectedPublisher: Publisher?
@@ -98,30 +98,48 @@ struct BookBatchEditView: View {
                 onSave(itemEdit, bookEdit)
             }
         ) {
-            Section(String(localized: "common.book")) {
-                Picker(String(localized: "book_contributor.field.role"), selection: $contributorRole) {
-                    ForEach(BookContributorRole.allCases) { role in
-                        Text(role.displayName)
-                            .tag(role)
-                    }
-                }
+            Section("book.section.contributors") {
+                ForEach(contributorEdits.indices, id: \.self) { index in
+                    let edit = contributorEdits[index]
 
-                HStack(spacing: 8) {
-                    Picker(String(localized: "person.title"), selection: contributorBinding) {
-                        Text(String(localized: "catalog.batch_edit.keep_unchanged"))
-                            .tag(nil as Person?)
-                        ForEach(availablePeople) { person in
-                            Text(person.displayName)
-                                .tag(Optional(person))
+                    Button {
+                        editingContributorIndex = index
+                        isPresentingContributorEditor = true
+                    } label: {
+                        HStack {
+                            Text(edit.role.displayName)
+                                .foregroundStyle(.secondary)
+
+                            Spacer()
+
+                            if let person = edit.person {
+                                Text(person.displayName)
+                                    .foregroundStyle(.primary)
+                                    .multilineTextAlignment(.trailing)
+                            } else {
+                                Text(String(localized: "common.clear"))
+                                    .foregroundStyle(.red)
+                            }
+
+                            Image(systemName: "chevron.right")
+                                .font(CatalogTypography.chipLabel)
+                                .foregroundStyle(.tertiary)
                         }
                     }
-
-                    clearButton(isActive: contributorShouldClear) {
-                        selectedContributor = nil
-                        contributorShouldClear = true
-                    }
+                    .buttonStyle(.plain)
                 }
+                .onDelete(perform: deleteContributorEdits)
 
+                Button {
+                    editingContributorIndex = nil
+                    isPresentingContributorEditor = true
+                } label: {
+                    Label("book_contributor.action.add", systemImage: "plus")
+                }
+                .disabled(contributorEdits.count >= BookContributorRole.allCases.count)
+            }
+
+            Section(String(localized: "common.book")) {
                 HStack(spacing: 8) {
                     Picker(String(localized: "series.title"), selection: seriesBinding) {
                         Text(String(localized: "catalog.batch_edit.keep_unchanged"))
@@ -196,6 +214,33 @@ struct BookBatchEditView: View {
                 }
             }
         }
+        .sheet(isPresented: $isPresentingContributorEditor) {
+            BookContributorBatchEditEditorView(
+                edit: editingContributorEdit,
+                people: availablePeople,
+                unavailableRoles: unavailableContributorRoles
+            ) { edit in
+                saveContributorEdit(edit)
+            } onClear: { role in
+                clearContributorRole(role)
+            }
+        }
+    }
+
+    private var editingContributorEdit: BookContributorBatchEdit? {
+        guard let editingContributorIndex,
+              contributorEdits.indices.contains(editingContributorIndex) else {
+            return nil
+        }
+        return contributorEdits[editingContributorIndex]
+    }
+
+    private var unavailableContributorRoles: Set<BookContributorRole> {
+        Set(
+            contributorEdits.enumerated().compactMap { index, edit in
+                index == editingContributorIndex ? nil : edit.role
+            }
+        )
     }
 
     private var bookEdit: BookBatchEdit {
@@ -207,13 +252,7 @@ struct BookBatchEditView: View {
                 value: publicationYearText,
                 shouldClear: publicationYearShouldClear
             ),
-            contributor: BookContributorBatchEdit(
-                role: contributorRole,
-                person: referenceChange(
-                    value: selectedContributor,
-                    shouldClear: contributorShouldClear
-                )
-            ),
+            contributors: contributorEdits,
             series: referenceChange(value: selectedSeries, shouldClear: seriesShouldClear),
             publisher: referenceChange(value: selectedPublisher, shouldClear: publisherShouldClear)
         )
@@ -221,16 +260,6 @@ struct BookBatchEditView: View {
 
     private var isDomainEditValid: Bool {
         isPublicationYearValid
-    }
-
-    private var contributorBinding: Binding<Person?> {
-        Binding(
-            get: { selectedContributor },
-            set: { value in
-                selectedContributor = value
-                contributorShouldClear = false
-            }
-        )
     }
 
     private var seriesBinding: Binding<BookSeries?> {
@@ -302,6 +331,24 @@ struct BookBatchEditView: View {
         return (1...maximumYear).contains(year)
     }
 
+    private func saveContributorEdit(_ edit: BookContributorBatchEdit) {
+        if let editingContributorIndex,
+           contributorEdits.indices.contains(editingContributorIndex) {
+            contributorEdits[editingContributorIndex] = edit
+        } else {
+            contributorEdits.append(edit)
+        }
+    }
+
+    private func clearContributorRole(_ role: BookContributorRole) {
+        let edit = BookContributorBatchEdit(role: role, person: nil)
+        saveContributorEdit(edit)
+    }
+
+    private func deleteContributorEdits(at offsets: IndexSet) {
+        contributorEdits.remove(atOffsets: offsets)
+    }
+
     private func referenceChange<Value>(
         value: Value?,
         shouldClear: Bool
@@ -350,6 +397,106 @@ struct BookBatchEditView: View {
         .foregroundStyle(.red)
         .opacity(isActive ? 1 : 0.35)
         .accessibilityLabel(String(localized: "common.clear"))
+    }
+}
+
+private struct BookContributorBatchEditEditorView: View {
+    let edit: BookContributorBatchEdit?
+    let people: [Person]
+    let unavailableRoles: Set<BookContributorRole>
+    let onSave: (BookContributorBatchEdit) -> Void
+    let onClear: (BookContributorRole) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var role: BookContributorRole
+    @State private var selectedPerson: Person?
+
+    init(
+        edit: BookContributorBatchEdit?,
+        people: [Person],
+        unavailableRoles: Set<BookContributorRole>,
+        onSave: @escaping (BookContributorBatchEdit) -> Void,
+        onClear: @escaping (BookContributorRole) -> Void
+    ) {
+        self.edit = edit
+        self.people = people
+        self.unavailableRoles = unavailableRoles
+        self.onSave = onSave
+        self.onClear = onClear
+
+        let initialRole = edit?.role
+            ?? BookContributorRole.allCases.first { !unavailableRoles.contains($0) }
+            ?? .author
+        _role = State(initialValue: initialRole)
+        _selectedPerson = State(initialValue: edit?.person)
+    }
+
+    private var availableRoles: [BookContributorRole] {
+        BookContributorRole.allCases.filter { value in
+            value == role || !unavailableRoles.contains(value)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("book_contributor.section.contribution") {
+                    Picker("book_contributor.field.role", selection: $role) {
+                        ForEach(availableRoles) { value in
+                            Text(value.displayName)
+                                .tag(value)
+                        }
+                    }
+
+                    Picker(String(localized: "person.title"), selection: $selectedPerson) {
+                        Text(String(localized: "common.none"))
+                            .tag(nil as Person?)
+                        ForEach(people) { person in
+                            Text(person.displayName)
+                                .tag(Optional(person))
+                        }
+                    }
+                }
+
+                Section {
+                    Button(role: .destructive) {
+                        onClear(role)
+                        dismiss()
+                    } label: {
+                        Label("common.clear", systemImage: "xmark.circle.fill")
+                    }
+                }
+            }
+            .navigationTitle("book.section.contributors")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel(String(localized: "common.cancel"))
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        guard let selectedPerson else { return }
+                        onSave(
+                            BookContributorBatchEdit(
+                                role: role,
+                                person: selectedPerson
+                            )
+                        )
+                        dismiss()
+                    } label: {
+                        Image(systemName: "checkmark")
+                    }
+                    .disabled(selectedPerson == nil)
+                    .accessibilityLabel(String(localized: "common.save"))
+                }
+            }
+        }
     }
 }
 

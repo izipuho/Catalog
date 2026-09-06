@@ -31,19 +31,11 @@ enum BookContributorRole: String, CaseIterable, Hashable, Identifiable, Codable 
 }
 
 /// Describes a forced replacement or clear for one contributor role in a batch edit.
-struct BookContributorBatchEdit {
-    var role: BookContributorRole = .author
-    var person: BatchEditValue<Person> = .unchanged
-
-    var isEmpty: Bool {
-        person.isUnchanged
-    }
+struct BookContributorBatchEdit: Hashable {
+    var role: BookContributorRole
+    var person: Person?
 
     func applying(to contributors: [BookContributor]) -> [BookContributor] {
-        guard case .set(let selectedPerson) = person else {
-            return contributors
-        }
-
         let ordered = contributors.sorted { lhs, rhs in
             if lhs.order != rhs.order { return lhs.order < rhs.order }
             return lhs.person.sortName.localizedCaseInsensitiveCompare(rhs.person.sortName) == .orderedAscending
@@ -51,13 +43,13 @@ struct BookContributorBatchEdit {
         let existingRoleIndex = ordered.firstIndex { $0.role == role }
         var result = ordered.filter { $0.role != role }
 
-        if let selectedPerson {
+        if let person {
             let insertionIndex = min(existingRoleIndex ?? result.count, result.count)
             result.insert(
                 BookContributor(
                     role: role,
                     order: insertionIndex,
-                    person: selectedPerson
+                    person: person
                 ),
                 at: insertionIndex
             )
@@ -113,7 +105,7 @@ struct BookBatchEdit {
     var genre: BatchEditValue<String> = .unchanged
     var pageCount: BatchEditValue<Int> = .unchanged
     var publicationYear: BatchEditValue<Int> = .unchanged
-    var contributor = BookContributorBatchEdit()
+    var contributors: [BookContributorBatchEdit] = []
     var series: BatchEditValue<BookSeries> = .unchanged
     var publisher: BatchEditValue<Publisher> = .unchanged
 
@@ -122,7 +114,7 @@ struct BookBatchEdit {
             && genre.isUnchanged
             && pageCount.isUnchanged
             && publicationYear.isUnchanged
-            && contributor.isEmpty
+            && contributors.isEmpty
             && series.isUnchanged
             && publisher.isUnchanged
     }
@@ -142,8 +134,8 @@ struct BookBatchEdit {
         if case .set(let value) = publicationYear {
             updated.publicationYear = value
         }
-        if !contributor.isEmpty {
-            updated.contributors = contributor.applying(to: updated.contributors)
+        for contributorEdit in contributors {
+            updated.contributors = contributorEdit.applying(to: updated.contributors)
         }
         if case .set(let value) = series {
             updated.series = value
