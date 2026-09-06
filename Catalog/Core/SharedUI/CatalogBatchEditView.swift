@@ -68,9 +68,7 @@ struct CatalogBatchEditView<DomainContent: View>: View {
                                 .tag(Optional(value))
                         }
                     }
-                }
-
-                Section(String(localized: "item.detail.acquisition_year")) {
+                    
                     Picker(
                         String(localized: "item.detail.acquisition_year"),
                         selection: $acquiredYearMode
@@ -82,10 +80,7 @@ struct CatalogBatchEditView<DomainContent: View>: View {
                     }
 
                     if acquiredYearMode == .set {
-                        TextField(
-                            String(localized: "catalog.batch_edit.acquired_year.placeholder"),
-                            text: $acquiredYearText
-                        )
+                        TextField("", text: $acquiredYearText)
                         .keyboardType(.numberPad)
                     }
                 }

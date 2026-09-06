@@ -80,19 +80,6 @@ struct BookBatchEditView: View {
                     )
                     .keyboardType(.numberPad)
                 }
-
-                fieldModePicker(
-                    title: String(localized: "book.field.pages"),
-                    selection: $pageCountMode
-                )
-
-                if pageCountMode == .set {
-                    TextField(
-                        String(localized: "book.field.pages"),
-                        text: $pageCountText
-                    )
-                    .keyboardType(.numberPad)
-                }
             }
         }
     }
