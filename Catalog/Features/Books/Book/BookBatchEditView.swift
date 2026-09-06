@@ -26,7 +26,7 @@ struct BookBatchEditView: View {
             .map { code in
                 LanguageOption(
                     code: code,
-                    name: bookLanguageDisplayName(for: code)
+                    name: BookLanguageFormatter.displayName(for: code)
                 )
             }
             .sorted { lhs, rhs in
