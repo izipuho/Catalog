@@ -1,8 +1,11 @@
 import SwiftUI
 
-/// Edits fields shared by multiple selected catalog items.
-struct CatalogBatchEditView: View {
+/// Hosts fields shared by all catalog batch editors and optional domain-specific sections.
+struct CatalogBatchEditView<DomainContent: View>: View {
+    let isDomainEditEmpty: Bool
+    let isDomainEditValid: Bool
     let onSave: (ItemBatchEdit) -> Void
+    private let domainContent: () -> DomainContent
 
     @Environment(\.dismiss) private var dismiss
     @State private var condition: ItemCondition?
@@ -15,9 +18,23 @@ struct CatalogBatchEditView: View {
     @State private var tagToRemoveInput = ""
     @State private var tagsToRemove: [String] = []
 
+    init(
+        isDomainEditEmpty: Bool,
+        isDomainEditValid: Bool = true,
+        onSave: @escaping (ItemBatchEdit) -> Void,
+        @ViewBuilder domainContent: @escaping () -> DomainContent
+    ) {
+        self.isDomainEditEmpty = isDomainEditEmpty
+        self.isDomainEditValid = isDomainEditValid
+        self.onSave = onSave
+        self.domainContent = domainContent
+    }
+
     var body: some View {
         NavigationStack {
             Form {
+                domainContent()
+
                 Section(String(localized: "catalog.batch_edit.fields")) {
                     Picker(String(localized: "common.field.condition"), selection: $condition) {
                         Text(String(localized: "catalog.batch_edit.keep_unchanged"))
@@ -101,11 +118,17 @@ struct CatalogBatchEditView: View {
                     } label: {
                         Image(systemName: "checkmark")
                     }
-                    .disabled(batchEdit.isEmpty || !isAcquiredYearValid)
+                    .disabled(!canSave)
                     .accessibilityLabel(String(localized: "common.save"))
                 }
             }
         }
+    }
+
+    private var canSave: Bool {
+        (isDomainEditEmpty == false || batchEdit.isEmpty == false)
+            && isDomainEditValid
+            && isAcquiredYearValid
     }
 
     private var batchEdit: ItemBatchEdit {
@@ -119,7 +142,7 @@ struct CatalogBatchEditView: View {
         )
     }
 
-    private var acquiredYearChange: ItemBatchEdit.AcquiredYearChange {
+    private var acquiredYearChange: BatchEditValue<Int> {
         guard isEditingAcquiredYear else { return .unchanged }
 
         let trimmed = acquiredYearText.trimmingCharacters(in: .whitespacesAndNewlines)

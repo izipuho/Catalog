@@ -387,7 +387,7 @@ struct CatalogQuickMoveSheet: View {
     }
 }
 
-/// Hosts shared Move/Edit/Delete sheets, confirmation and multi-selection toolbar.
+/// Hosts shared card-management sheets, confirmations and multi-selection toolbar actions.
 struct CatalogCardManagementModifier<Item: Identifiable>: ViewModifier where Item.ID == UUID {
     @Binding var state: CatalogCardManagementState<Item>
     let visibleItems: [Item]
@@ -403,7 +403,7 @@ struct CatalogCardManagementModifier<Item: Identifiable>: ViewModifier where Ite
     let onSaveHome: (Home, [Location]) -> Void
     let onMove: ([Item], UUID?) -> Void
     let onDelete: ([Item]) -> Void
-    var onBatchEdit: (([Item], ItemBatchEdit) -> Void)? = nil
+    var batchEditContent: (() -> AnyView)? = nil
 
     func body(content: Content) -> some View {
         let storage = CatalogStorageContext(snapshot: snapshot, collection: collection)
@@ -445,11 +445,8 @@ struct CatalogCardManagementModifier<Item: Identifiable>: ViewModifier where Ite
                 )
             }
             .sheet(isPresented: $state.isPresentingBatchEdit) {
-                if let onBatchEdit {
-                    CatalogBatchEditView { edit in
-                        onBatchEdit(state.selectedItems(in: visibleItems), edit)
-                        state.completeAction()
-                    }
+                if let batchEditContent {
+                    batchEditContent()
                 }
             }
             .confirmationDialog(
@@ -497,7 +494,7 @@ struct CatalogCardManagementModifier<Item: Identifiable>: ViewModifier where Ite
 
                         ToolbarSpacer(.flexible, placement: .bottomBar)
 
-                        if onBatchEdit != nil {
+                        if batchEditContent != nil {
                             ToolbarItem(placement: .bottomBar) {
                                 Button { state.beginBatchEdit() } label: {
                                     Image(systemName: "pencil")

@@ -130,14 +130,22 @@ struct ItemRecord: Identifiable, Hashable, Codable {
     }
 }
 
+/// Describes an optional value change in a batch edit: keep the current value or replace/clear it.
+enum BatchEditValue<Value> {
+    case unchanged
+    case set(Value?)
+
+    var isUnchanged: Bool {
+        if case .unchanged = self {
+            return true
+        }
+        return false
+    }
+}
+
 /// Describes shared item fields that should be changed for a group of catalog items.
 struct ItemBatchEdit {
-    enum AcquiredYearChange {
-        case unchanged
-        case set(Int?)
-    }
-
-    var acquiredYear: AcquiredYearChange = .unchanged
+    var acquiredYear: BatchEditValue<Int> = .unchanged
     var condition: ItemCondition?
     var acquisitionMethod: AcquisitionMethod?
     var isFavorite: Bool?
@@ -145,14 +153,7 @@ struct ItemBatchEdit {
     var tagsToRemove: [String] = []
 
     var isEmpty: Bool {
-        let keepsAcquiredYear: Bool
-        if case .unchanged = acquiredYear {
-            keepsAcquiredYear = true
-        } else {
-            keepsAcquiredYear = false
-        }
-
-        return keepsAcquiredYear
+        acquiredYear.isUnchanged
             && condition == nil
             && acquisitionMethod == nil
             && isFavorite == nil

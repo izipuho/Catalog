@@ -66,6 +66,46 @@ struct BookDetails: Identifiable, Hashable, Codable {
     var id: UUID { itemID }
 }
 
+/// Describes book-specific fields that should be changed for a group of books.
+struct BookBatchEdit {
+    var languageCode: BatchEditValue<String> = .unchanged
+    var genre: BatchEditValue<String> = .unchanged
+    var pageCount: BatchEditValue<Int> = .unchanged
+    var publicationYear: BatchEditValue<Int> = .unchanged
+
+    var isEmpty: Bool {
+        languageCode.isUnchanged
+            && genre.isUnchanged
+            && pageCount.isUnchanged
+            && publicationYear.isUnchanged
+    }
+
+    func applying(to details: BookDetails) -> BookDetails {
+        var updated = details
+
+        if case .set(let value) = languageCode {
+            updated.languageCode = normalized(value)?.lowercased()
+        }
+        if case .set(let value) = genre {
+            updated.genre = normalized(value)
+        }
+        if case .set(let value) = pageCount {
+            updated.pageCount = value
+        }
+        if case .set(let value) = publicationYear {
+            updated.publicationYear = value
+        }
+
+        return updated
+    }
+
+    private func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 /// Represents a complete book catalog record.
 struct BookRecord: Identifiable, Hashable {
     let item: ItemRecord
