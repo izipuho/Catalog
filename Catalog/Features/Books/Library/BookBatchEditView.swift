@@ -2,14 +2,35 @@ import SwiftUI
 
 /// Edits shared and book-specific fields for multiple selected books.
 struct BookBatchEditView: View {
+    let people: [Person]
+    let series: [BookSeries]
+    let publishers: [Publisher]
     let onSave: (ItemBatchEdit, BookBatchEdit) -> Void
 
+    @State private var selectedAuthor: Person?
+    @State private var authorShouldClear = false
+    @State private var selectedSeries: BookSeries?
+    @State private var seriesShouldClear = false
+    @State private var selectedPublisher: Publisher?
+    @State private var publisherShouldClear = false
     @State private var languageCode: String?
     @State private var languageShouldClear = false
     @State private var genre = ""
     @State private var genreShouldClear = false
     @State private var publicationYearText = ""
     @State private var publicationYearShouldClear = false
+
+    init(
+        people: [Person] = [],
+        series: [BookSeries] = [],
+        publishers: [Publisher] = [],
+        onSave: @escaping (ItemBatchEdit, BookBatchEdit) -> Void
+    ) {
+        self.people = people
+        self.series = series
+        self.publishers = publishers
+        self.onSave = onSave
+    }
 
     private struct LanguageOption: Identifiable {
         let code: String
@@ -32,6 +53,42 @@ struct BookBatchEditView: View {
             }
     }
 
+    private var availablePeople: [Person] {
+        Dictionary(people.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            .values
+            .sorted {
+                let comparison = $0.sortName.localizedCaseInsensitiveCompare($1.sortName)
+                if comparison != .orderedSame {
+                    return comparison == .orderedAscending
+                }
+                return $0.id.uuidString < $1.id.uuidString
+            }
+    }
+
+    private var availableSeries: [BookSeries] {
+        Dictionary(series.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            .values
+            .sorted {
+                let comparison = $0.name.localizedCaseInsensitiveCompare($1.name)
+                if comparison != .orderedSame {
+                    return comparison == .orderedAscending
+                }
+                return $0.id.uuidString < $1.id.uuidString
+            }
+    }
+
+    private var availablePublishers: [Publisher] {
+        Dictionary(publishers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            .values
+            .sorted {
+                let comparison = $0.name.localizedCaseInsensitiveCompare($1.name)
+                if comparison != .orderedSame {
+                    return comparison == .orderedAscending
+                }
+                return $0.id.uuidString < $1.id.uuidString
+            }
+    }
+
     var body: some View {
         CatalogBatchEditView(
             isDomainEditEmpty: bookEdit.isEmpty,
@@ -41,6 +98,54 @@ struct BookBatchEditView: View {
             }
         ) {
             Section(String(localized: "common.book")) {
+                HStack(spacing: 8) {
+                    Picker(String(localized: "book_contributor.role.author"), selection: authorBinding) {
+                        Text(String(localized: "catalog.batch_edit.keep_unchanged"))
+                            .tag(nil as Person?)
+                        ForEach(availablePeople) { person in
+                            Text(person.displayName)
+                                .tag(Optional(person))
+                        }
+                    }
+
+                    clearButton(isActive: authorShouldClear) {
+                        selectedAuthor = nil
+                        authorShouldClear = true
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Picker(String(localized: "series.title"), selection: seriesBinding) {
+                        Text(String(localized: "catalog.batch_edit.keep_unchanged"))
+                            .tag(nil as BookSeries?)
+                        ForEach(availableSeries) { value in
+                            Text(value.name)
+                                .tag(Optional(value))
+                        }
+                    }
+
+                    clearButton(isActive: seriesShouldClear) {
+                        selectedSeries = nil
+                        seriesShouldClear = true
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Picker(String(localized: "publisher.title"), selection: publisherBinding) {
+                        Text(String(localized: "catalog.batch_edit.keep_unchanged"))
+                            .tag(nil as Publisher?)
+                        ForEach(availablePublishers) { value in
+                            Text(value.name)
+                                .tag(Optional(value))
+                        }
+                    }
+
+                    clearButton(isActive: publisherShouldClear) {
+                        selectedPublisher = nil
+                        publisherShouldClear = true
+                    }
+                }
+
                 HStack(spacing: 8) {
                     Picker(String(localized: "book.field.language"), selection: languageBinding) {
                         Text(String(localized: "catalog.batch_edit.keep_unchanged"))
@@ -93,12 +198,45 @@ struct BookBatchEditView: View {
             publicationYear: integerChange(
                 value: publicationYearText,
                 shouldClear: publicationYearShouldClear
-            )
+            ),
+            author: referenceChange(value: selectedAuthor, shouldClear: authorShouldClear),
+            series: referenceChange(value: selectedSeries, shouldClear: seriesShouldClear),
+            publisher: referenceChange(value: selectedPublisher, shouldClear: publisherShouldClear)
         )
     }
 
     private var isDomainEditValid: Bool {
         isPublicationYearValid
+    }
+
+    private var authorBinding: Binding<Person?> {
+        Binding(
+            get: { selectedAuthor },
+            set: { value in
+                selectedAuthor = value
+                authorShouldClear = false
+            }
+        )
+    }
+
+    private var seriesBinding: Binding<BookSeries?> {
+        Binding(
+            get: { selectedSeries },
+            set: { value in
+                selectedSeries = value
+                seriesShouldClear = false
+            }
+        )
+    }
+
+    private var publisherBinding: Binding<Publisher?> {
+        Binding(
+            get: { selectedPublisher },
+            set: { value in
+                selectedPublisher = value
+                publisherShouldClear = false
+            }
+        )
     }
 
     private var languageBinding: Binding<String?> {
@@ -148,6 +286,17 @@ struct BookBatchEditView: View {
 
         let maximumYear = Calendar.current.component(.year, from: Date()) + 1
         return (1...maximumYear).contains(year)
+    }
+
+    private func referenceChange<Value>(
+        value: Value?,
+        shouldClear: Bool
+    ) -> BatchEditValue<Value> {
+        if shouldClear {
+            return .set(nil)
+        }
+        guard let value else { return .unchanged }
+        return .set(value)
     }
 
     private func stringChange(
@@ -214,6 +363,13 @@ extension CatalogCardManagementModifier where Item == BookRecord {
         onDelete: @escaping ([BookRecord]) -> Void,
         onBatchEdit: @escaping ([BookRecord], ItemBatchEdit, BookBatchEdit) -> Void
     ) {
+        let availableSeries: [BookSeries]
+        if let collectionID = collection?.id {
+            availableSeries = snapshot?.bookSeries.filter { $0.collectionID == collectionID } ?? []
+        } else {
+            availableSeries = []
+        }
+
         self.init(
             state: state,
             visibleItems: visibleItems,
@@ -231,7 +387,11 @@ extension CatalogCardManagementModifier where Item == BookRecord {
             onDelete: onDelete,
             batchEditContent: {
                 AnyView(
-                    BookBatchEditView { itemEdit, bookEdit in
+                    BookBatchEditView(
+                        people: snapshot?.people ?? [],
+                        series: availableSeries,
+                        publishers: snapshot?.publishers ?? []
+                    ) { itemEdit, bookEdit in
                         onBatchEdit(
                             state.wrappedValue.selectedItems(in: visibleItems),
                             itemEdit,

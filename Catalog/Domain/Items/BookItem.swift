@@ -72,12 +72,18 @@ struct BookBatchEdit {
     var genre: BatchEditValue<String> = .unchanged
     var pageCount: BatchEditValue<Int> = .unchanged
     var publicationYear: BatchEditValue<Int> = .unchanged
+    var author: BatchEditValue<Person> = .unchanged
+    var series: BatchEditValue<BookSeries> = .unchanged
+    var publisher: BatchEditValue<Publisher> = .unchanged
 
     var isEmpty: Bool {
         languageCode.isUnchanged
             && genre.isUnchanged
             && pageCount.isUnchanged
             && publicationYear.isUnchanged
+            && author.isUnchanged
+            && series.isUnchanged
+            && publisher.isUnchanged
     }
 
     func applying(to details: BookDetails) -> BookDetails {
@@ -95,8 +101,44 @@ struct BookBatchEdit {
         if case .set(let value) = publicationYear {
             updated.publicationYear = value
         }
+        if case .set(let value) = author {
+            updated.contributors = contributorsReplacingAuthors(
+                in: updated.contributors,
+                with: value
+            )
+        }
+        if case .set(let value) = series {
+            updated.series = value
+        }
+        if case .set(let value) = publisher {
+            updated.publisher = value
+        }
 
         return updated
+    }
+
+    private func contributorsReplacingAuthors(
+        in contributors: [BookContributor],
+        with author: Person?
+    ) -> [BookContributor] {
+        let remaining = contributors
+            .filter { $0.role != .author }
+            .sorted { lhs, rhs in
+                if lhs.order != rhs.order { return lhs.order < rhs.order }
+                return lhs.person.sortName.localizedCaseInsensitiveCompare(rhs.person.sortName) == .orderedAscending
+            }
+
+        var result: [BookContributor] = []
+        if let author {
+            result.append(BookContributor(role: .author, order: 0, person: author))
+        }
+        result.append(contentsOf: remaining)
+
+        return result.enumerated().map { index, contributor in
+            var updated = contributor
+            updated.order = index
+            return updated
+        }
     }
 
     private func normalized(_ value: String?) -> String? {
