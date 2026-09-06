@@ -271,7 +271,8 @@ struct LibraryView: View {
                         repository.saveLocations(locations, in: home.id)
                     },
                     onMove: moveBooks,
-                    onDelete: deleteBooks
+                    onDelete: deleteBooks,
+                    onBatchEdit: batchEditBooks
                 )
             )
             .task(id: collection.id) {
@@ -556,6 +557,18 @@ struct LibraryView: View {
                 BookRecord(item: updatedItem, details: book.details)
             )
         }
+    }
+
+    private func batchEditBooks(_ books: [BookRecord], edit: ItemBatchEdit) {
+        guard canEditLibrary else { return }
+
+        let updatedBooks = books.map { book in
+            BookRecord(
+                item: edit.applying(to: book.item),
+                details: book.details
+            )
+        }
+        (repository as! any BookCatalogRepository).saveBookRecords(updatedBooks)
     }
 
     private func deleteBooks(_ books: [BookRecord]) {

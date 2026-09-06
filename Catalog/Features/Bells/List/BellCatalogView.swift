@@ -265,7 +265,8 @@ struct BellCatalogView: View {
                     repository.saveLocations(locations, in: home.id)
                 },
                 onMove: moveBells,
-                onDelete: deleteBells
+                onDelete: deleteBells,
+                onBatchEdit: batchEditBells
             )
         )
         .sensoryFeedback(trigger: feedbackEvent) { _, newValue in
@@ -596,6 +597,22 @@ struct BellCatalogView: View {
             )
         }
 
+        emitFeedback(.success)
+    }
+
+    private func batchEditBells(_ bells: [BellListItem], edit: ItemBatchEdit) {
+        guard canEditCollection else { return }
+
+        let updatedRecords = bells.compactMap { bell -> BellRecord? in
+            guard let record = catalogSnapshot?.recordsByID[bell.id] else { return nil }
+            return BellRecord(
+                item: edit.applying(to: record.item),
+                details: record.details
+            )
+        }
+        guard !updatedRecords.isEmpty else { return }
+
+        (repository as! any BellCatalogRepository).saveBellRecords(updatedRecords)
         emitFeedback(.success)
     }
 

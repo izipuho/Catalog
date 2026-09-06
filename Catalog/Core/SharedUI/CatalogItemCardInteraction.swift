@@ -1,13 +1,14 @@
 import Foundation
 import SwiftUI
 
-/// Shared state for selectable item cards with Move/Delete actions.
+/// Shared state for selectable item cards with Move/Edit/Delete actions.
 struct CatalogCardManagementState<Item: Identifiable> where Item.ID == UUID {
     var selectedIDs: Set<UUID> = []
     var isSelectionModeEnabled = false
     var pendingMove: Item?
     var pendingDeletion: Item?
     var isPresentingDeleteConfirmation = false
+    var isPresentingBatchEdit = false
     var isPresentingHomeEditor = false
     var draftHome = Home(id: UUID(), name: "", iconName: "house.fill", notes: "")
     var draftHomeLocations: [Location] = []
@@ -56,6 +57,10 @@ struct CatalogCardManagementState<Item: Identifiable> where Item.ID == UUID {
         pendingMove = item
     }
 
+    mutating func beginBatchEdit() {
+        isPresentingBatchEdit = true
+    }
+
     mutating func beginDelete(_ item: Item?) {
         guard let item else { return }
         pendingDeletion = item
@@ -71,6 +76,7 @@ struct CatalogCardManagementState<Item: Identifiable> where Item.ID == UUID {
         pendingMove = nil
         pendingDeletion = nil
         isPresentingDeleteConfirmation = false
+        isPresentingBatchEdit = false
         if isSelectionModeEnabled {
             cancelSelection()
         }
@@ -381,7 +387,7 @@ struct CatalogQuickMoveSheet: View {
     }
 }
 
-/// Hosts shared Move/Delete sheets, confirmation and multi-selection toolbar.
+/// Hosts shared Move/Edit/Delete sheets, confirmation and multi-selection toolbar.
 struct CatalogCardManagementModifier<Item: Identifiable>: ViewModifier where Item.ID == UUID {
     @Binding var state: CatalogCardManagementState<Item>
     let visibleItems: [Item]
@@ -397,6 +403,7 @@ struct CatalogCardManagementModifier<Item: Identifiable>: ViewModifier where Ite
     let onSaveHome: (Home, [Location]) -> Void
     let onMove: ([Item], UUID?) -> Void
     let onDelete: ([Item]) -> Void
+    var onBatchEdit: (([Item], ItemBatchEdit) -> Void)? = nil
 
     func body(content: Content) -> some View {
         let storage = CatalogStorageContext(snapshot: snapshot, collection: collection)
@@ -436,6 +443,14 @@ struct CatalogCardManagementModifier<Item: Identifiable>: ViewModifier where Ite
                     },
                     onDelete: nil
                 )
+            }
+            .sheet(isPresented: $state.isPresentingBatchEdit) {
+                if let onBatchEdit {
+                    CatalogBatchEditView { edit in
+                        onBatchEdit(state.selectedItems(in: visibleItems), edit)
+                        state.completeAction()
+                    }
+                }
             }
             .confirmationDialog(
                 deleteTitle,
@@ -481,6 +496,18 @@ struct CatalogCardManagementModifier<Item: Identifiable>: ViewModifier where Ite
                         }
 
                         ToolbarSpacer(.flexible, placement: .bottomBar)
+
+                        if onBatchEdit != nil {
+                            ToolbarItem(placement: .bottomBar) {
+                                Button { state.beginBatchEdit() } label: {
+                                    Image(systemName: "pencil")
+                                }
+                                .tint(tint)
+                                .accessibilityLabel(String(localized: "common.edit"))
+                            }
+
+                            ToolbarSpacer(.flexible, placement: .bottomBar)
+                        }
 
                         ToolbarItem(placement: .bottomBar) {
                             Button(role: .destructive) { state.beginDelete(selected.first) } label: {

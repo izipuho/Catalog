@@ -130,6 +130,75 @@ struct ItemRecord: Identifiable, Hashable, Codable {
     }
 }
 
+/// Describes shared item fields that should be changed for a group of catalog items.
+struct ItemBatchEdit {
+    enum AcquiredYearChange {
+        case unchanged
+        case set(Int?)
+    }
+
+    var acquiredYear: AcquiredYearChange = .unchanged
+    var condition: ItemCondition?
+    var acquisitionMethod: AcquisitionMethod?
+    var isFavorite: Bool?
+    var tagsToAdd: [String] = []
+    var tagsToRemove: [String] = []
+
+    var isEmpty: Bool {
+        let keepsAcquiredYear: Bool
+        if case .unchanged = acquiredYear {
+            keepsAcquiredYear = true
+        } else {
+            keepsAcquiredYear = false
+        }
+
+        return keepsAcquiredYear
+            && condition == nil
+            && acquisitionMethod == nil
+            && isFavorite == nil
+            && tagsToAdd.isEmpty
+            && tagsToRemove.isEmpty
+    }
+
+    func applying(to item: ItemRecord) -> ItemRecord {
+        var updated = item
+
+        if case .set(let year) = acquiredYear {
+            updated.acquiredYear = year
+        }
+        if let condition {
+            updated.condition = condition
+        }
+        if let acquisitionMethod {
+            updated.acquisitionMethod = acquisitionMethod
+        }
+        if let isFavorite {
+            updated.isFavorite = isFavorite
+        }
+
+        for tag in normalized(tagsToRemove) {
+            updated.tags.removeAll { $0.caseInsensitiveCompare(tag) == .orderedSame }
+        }
+        for tag in normalized(tagsToAdd)
+        where !updated.tags.contains(where: { $0.caseInsensitiveCompare(tag) == .orderedSame }) {
+            updated.tags.append(tag)
+        }
+
+        return updated
+    }
+
+    private func normalized(_ tags: [String]) -> [String] {
+        var seen: Set<String> = []
+        return tags.compactMap { rawTag in
+            let tag = rawTag.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !tag.isEmpty else { return nil }
+            let key = tag.lowercased()
+            guard seen.insert(key).inserted else { return nil }
+            return tag
+        }
+    }
+}
+
 /// Groups item condition values and behavior.
 enum ItemCondition: String, CaseIterable, Identifiable, Codable {
     case mint = "Mint"
