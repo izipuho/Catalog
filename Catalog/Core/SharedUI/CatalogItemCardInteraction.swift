@@ -316,7 +316,6 @@ struct CatalogQuickMoveSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedLocationID: UUID?
-
     init(
         currentLocationID: UUID?,
         title: String,
@@ -485,26 +484,22 @@ struct CatalogCardManagementModifier<Item: Identifiable>: ViewModifier where Ite
                     }
 
                     if canEdit && !selected.isEmpty {
-                        ToolbarItem(placement: .bottomBar) {
+                        ToolbarItemGroup(placement: .bottomBar) {
                             Button { state.beginMove(selected.first) } label: {
                                 Image(systemName: "folder")
                             }
                             .tint(tint)
-                        }
 
-                        ToolbarSpacer(.flexible, placement: .bottomBar)
-
-                        if batchEditContent != nil {
-                            ToolbarItem(placement: .bottomBar) {
+                            if batchEditContent != nil {
                                 Button { state.beginBatchEdit() } label: {
                                     Image(systemName: "pencil")
                                 }
                                 .tint(tint)
                                 .accessibilityLabel(String(localized: "common.edit"))
                             }
-
-                            ToolbarSpacer(.flexible, placement: .bottomBar)
                         }
+
+                        ToolbarSpacer(.flexible, placement: .bottomBar)
 
                         ToolbarItem(placement: .bottomBar) {
                             Button(role: .destructive) { state.beginDelete(selected.first) } label: {
