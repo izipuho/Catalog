@@ -148,17 +148,11 @@ struct ItemBatchEdit {
     var acquiredYear: BatchEditValue<Int> = .unchanged
     var condition: ItemCondition?
     var acquisitionMethod: AcquisitionMethod?
-    var isFavorite: Bool?
-    var tagsToAdd: [String] = []
-    var tagsToRemove: [String] = []
 
     var isEmpty: Bool {
         acquiredYear.isUnchanged
             && condition == nil
             && acquisitionMethod == nil
-            && isFavorite == nil
-            && tagsToAdd.isEmpty
-            && tagsToRemove.isEmpty
     }
 
     func applying(to item: ItemRecord) -> ItemRecord {
@@ -173,30 +167,8 @@ struct ItemBatchEdit {
         if let acquisitionMethod {
             updated.acquisitionMethod = acquisitionMethod
         }
-        if let isFavorite {
-            updated.isFavorite = isFavorite
-        }
-
-        for tag in normalized(tagsToRemove) {
-            updated.tags.removeAll { $0.caseInsensitiveCompare(tag) == .orderedSame }
-        }
-        for tag in normalized(tagsToAdd)
-        where !updated.tags.contains(where: { $0.caseInsensitiveCompare(tag) == .orderedSame }) {
-            updated.tags.append(tag)
-        }
 
         return updated
-    }
-
-    private func normalized(_ tags: [String]) -> [String] {
-        var seen: Set<String> = []
-        return tags.compactMap { rawTag in
-            let tag = rawTag.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !tag.isEmpty else { return nil }
-            let key = tag.lowercased()
-            guard seen.insert(key).inserted else { return nil }
-            return tag
-        }
     }
 }
 

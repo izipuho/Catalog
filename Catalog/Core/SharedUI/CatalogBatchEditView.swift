@@ -30,13 +30,8 @@ struct CatalogBatchEditView<DomainContent: View>: View {
     @Environment(\.dismiss) private var dismiss
     @State private var condition: ItemCondition?
     @State private var acquisitionMethod: AcquisitionMethod?
-    @State private var favorite: Bool?
     @State private var acquiredYearMode: CatalogBatchEditFieldMode = .unchanged
     @State private var acquiredYearText = ""
-    @State private var tagToAddInput = ""
-    @State private var tagsToAdd: [String] = []
-    @State private var tagToRemoveInput = ""
-    @State private var tagsToRemove: [String] = []
 
     init(
         isDomainEditEmpty: Bool,
@@ -73,15 +68,6 @@ struct CatalogBatchEditView<DomainContent: View>: View {
                                 .tag(Optional(value))
                         }
                     }
-
-                    Picker(String(localized: "catalog.batch_edit.favorite"), selection: $favorite) {
-                        Text(String(localized: "catalog.batch_edit.keep_unchanged"))
-                            .tag(nil as Bool?)
-                        Text(String(localized: "catalog.batch_edit.favorite.yes"))
-                            .tag(Optional(true))
-                        Text(String(localized: "catalog.batch_edit.favorite.no"))
-                            .tag(Optional(false))
-                    }
                 }
 
                 Section(String(localized: "catalog.batch_edit.acquired_year")) {
@@ -102,20 +88,6 @@ struct CatalogBatchEditView<DomainContent: View>: View {
                         )
                         .keyboardType(.numberPad)
                     }
-                }
-
-                Section(String(localized: "catalog.batch_edit.tags.add")) {
-                    TagEditorSection(
-                        tagInput: $tagToAddInput,
-                        tags: $tagsToAdd
-                    )
-                }
-
-                Section(String(localized: "catalog.batch_edit.tags.remove")) {
-                    TagEditorSection(
-                        tagInput: $tagToRemoveInput,
-                        tags: $tagsToRemove
-                    )
                 }
             }
             .navigationTitle(String(localized: "catalog.batch_edit.title"))
@@ -154,10 +126,7 @@ struct CatalogBatchEditView<DomainContent: View>: View {
         ItemBatchEdit(
             acquiredYear: acquiredYearChange,
             condition: condition,
-            acquisitionMethod: acquisitionMethod,
-            isFavorite: favorite,
-            tagsToAdd: tagsToAdd,
-            tagsToRemove: tagsToRemove
+            acquisitionMethod: acquisitionMethod
         )
     }
 
