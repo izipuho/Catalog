@@ -492,7 +492,7 @@ struct CatalogCardManagementModifier<Item: Identifiable>: ViewModifier where Ite
 
                             if batchEditContent != nil {
                                 Button { state.beginBatchEdit() } label: {
-                                    Image(systemName: "pencil")
+                                    Image(systemName: "square.and.pencil")
                                 }
                                 .tint(tint)
                                 .accessibilityLabel(String(localized: "common.edit"))
