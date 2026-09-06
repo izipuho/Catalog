@@ -70,9 +70,9 @@ struct CatalogBatchEditView<DomainContent: View>: View {
                     }
                 }
 
-                Section(String(localized: "catalog.batch_edit.acquired_year")) {
+                Section(String(localized: "item.detail.acquisition_year")) {
                     Picker(
-                        String(localized: "catalog.batch_edit.acquired_year"),
+                        String(localized: "item.detail.acquisition_year"),
                         selection: $acquiredYearMode
                     ) {
                         ForEach(CatalogBatchEditFieldMode.allCases) { mode in
