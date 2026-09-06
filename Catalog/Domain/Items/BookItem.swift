@@ -30,6 +30,47 @@ enum BookContributorRole: String, CaseIterable, Hashable, Identifiable, Codable 
     }
 }
 
+/// Describes a forced replacement or clear for one contributor role in a batch edit.
+struct BookContributorBatchEdit {
+    var role: BookContributorRole = .author
+    var person: BatchEditValue<Person> = .unchanged
+
+    var isEmpty: Bool {
+        person.isUnchanged
+    }
+
+    func applying(to contributors: [BookContributor]) -> [BookContributor] {
+        guard case .set(let selectedPerson) = person else {
+            return contributors
+        }
+
+        let ordered = contributors.sorted { lhs, rhs in
+            if lhs.order != rhs.order { return lhs.order < rhs.order }
+            return lhs.person.sortName.localizedCaseInsensitiveCompare(rhs.person.sortName) == .orderedAscending
+        }
+        let existingRoleIndex = ordered.firstIndex { $0.role == role }
+        var result = ordered.filter { $0.role != role }
+
+        if let selectedPerson {
+            let insertionIndex = min(existingRoleIndex ?? result.count, result.count)
+            result.insert(
+                BookContributor(
+                    role: role,
+                    order: insertionIndex,
+                    person: selectedPerson
+                ),
+                at: insertionIndex
+            )
+        }
+
+        return result.enumerated().map { index, contributor in
+            var updated = contributor
+            updated.order = index
+            return updated
+        }
+    }
+}
+
 /// Represents a typed external or catalog identifier assigned to a book.
 struct BookIdentifier: Hashable, Codable, Sendable {
     var type: BookIdentifierType
@@ -72,7 +113,7 @@ struct BookBatchEdit {
     var genre: BatchEditValue<String> = .unchanged
     var pageCount: BatchEditValue<Int> = .unchanged
     var publicationYear: BatchEditValue<Int> = .unchanged
-    var author: BatchEditValue<Person> = .unchanged
+    var contributor = BookContributorBatchEdit()
     var series: BatchEditValue<BookSeries> = .unchanged
     var publisher: BatchEditValue<Publisher> = .unchanged
 
@@ -81,7 +122,7 @@ struct BookBatchEdit {
             && genre.isUnchanged
             && pageCount.isUnchanged
             && publicationYear.isUnchanged
-            && author.isUnchanged
+            && contributor.isEmpty
             && series.isUnchanged
             && publisher.isUnchanged
     }
@@ -101,11 +142,8 @@ struct BookBatchEdit {
         if case .set(let value) = publicationYear {
             updated.publicationYear = value
         }
-        if case .set(let value) = author {
-            updated.contributors = contributorsReplacingAuthors(
-                in: updated.contributors,
-                with: value
-            )
+        if !contributor.isEmpty {
+            updated.contributors = contributor.applying(to: updated.contributors)
         }
         if case .set(let value) = series {
             updated.series = value
@@ -115,30 +153,6 @@ struct BookBatchEdit {
         }
 
         return updated
-    }
-
-    private func contributorsReplacingAuthors(
-        in contributors: [BookContributor],
-        with author: Person?
-    ) -> [BookContributor] {
-        let remaining = contributors
-            .filter { $0.role != .author }
-            .sorted { lhs, rhs in
-                if lhs.order != rhs.order { return lhs.order < rhs.order }
-                return lhs.person.sortName.localizedCaseInsensitiveCompare(rhs.person.sortName) == .orderedAscending
-            }
-
-        var result: [BookContributor] = []
-        if let author {
-            result.append(BookContributor(role: .author, order: 0, person: author))
-        }
-        result.append(contentsOf: remaining)
-
-        return result.enumerated().map { index, contributor in
-            var updated = contributor
-            updated.order = index
-            return updated
-        }
     }
 
     private func normalized(_ value: String?) -> String? {

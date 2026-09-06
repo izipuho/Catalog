@@ -7,8 +7,9 @@ struct BookBatchEditView: View {
     let publishers: [Publisher]
     let onSave: (ItemBatchEdit, BookBatchEdit) -> Void
 
-    @State private var selectedAuthor: Person?
-    @State private var authorShouldClear = false
+    @State private var contributorRole: BookContributorRole = .author
+    @State private var selectedContributor: Person?
+    @State private var contributorShouldClear = false
     @State private var selectedSeries: BookSeries?
     @State private var seriesShouldClear = false
     @State private var selectedPublisher: Publisher?
@@ -98,8 +99,15 @@ struct BookBatchEditView: View {
             }
         ) {
             Section(String(localized: "common.book")) {
+                Picker(String(localized: "book_contributor.field.role"), selection: $contributorRole) {
+                    ForEach(BookContributorRole.allCases) { role in
+                        Text(role.displayName)
+                            .tag(role)
+                    }
+                }
+
                 HStack(spacing: 8) {
-                    Picker(String(localized: "book_contributor.role.author"), selection: authorBinding) {
+                    Picker(String(localized: "person.title"), selection: contributorBinding) {
                         Text(String(localized: "catalog.batch_edit.keep_unchanged"))
                             .tag(nil as Person?)
                         ForEach(availablePeople) { person in
@@ -108,9 +116,9 @@ struct BookBatchEditView: View {
                         }
                     }
 
-                    clearButton(isActive: authorShouldClear) {
-                        selectedAuthor = nil
-                        authorShouldClear = true
+                    clearButton(isActive: contributorShouldClear) {
+                        selectedContributor = nil
+                        contributorShouldClear = true
                     }
                 }
 
@@ -199,7 +207,13 @@ struct BookBatchEditView: View {
                 value: publicationYearText,
                 shouldClear: publicationYearShouldClear
             ),
-            author: referenceChange(value: selectedAuthor, shouldClear: authorShouldClear),
+            contributor: BookContributorBatchEdit(
+                role: contributorRole,
+                person: referenceChange(
+                    value: selectedContributor,
+                    shouldClear: contributorShouldClear
+                )
+            ),
             series: referenceChange(value: selectedSeries, shouldClear: seriesShouldClear),
             publisher: referenceChange(value: selectedPublisher, shouldClear: publisherShouldClear)
         )
@@ -209,12 +223,12 @@ struct BookBatchEditView: View {
         isPublicationYearValid
     }
 
-    private var authorBinding: Binding<Person?> {
+    private var contributorBinding: Binding<Person?> {
         Binding(
-            get: { selectedAuthor },
+            get: { selectedContributor },
             set: { value in
-                selectedAuthor = value
-                authorShouldClear = false
+                selectedContributor = value
+                contributorShouldClear = false
             }
         )
     }
