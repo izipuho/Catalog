@@ -1,25 +1,5 @@
 import SwiftUI
 
-/// Describes how an optional value should be handled by a batch editor.
-enum CatalogBatchEditFieldMode: String, CaseIterable, Identifiable {
-    case unchanged
-    case clear
-    case set
-
-    var id: Self { self }
-
-    var displayName: String {
-        switch self {
-        case .unchanged:
-            return String(localized: "catalog.batch_edit.keep_unchanged")
-        case .clear:
-            return String(localized: "common.clear")
-        case .set:
-            return String(localized: "catalog.batch_edit.set")
-        }
-    }
-}
-
 /// Hosts fields shared by all catalog batch editors and optional domain-specific sections.
 struct CatalogBatchEditView<DomainContent: View>: View {
     let isDomainEditEmpty: Bool
@@ -30,8 +10,8 @@ struct CatalogBatchEditView<DomainContent: View>: View {
     @Environment(\.dismiss) private var dismiss
     @State private var condition: ItemCondition?
     @State private var acquisitionMethod: AcquisitionMethod?
-    @State private var acquiredYearMode: CatalogBatchEditFieldMode = .unchanged
     @State private var acquiredYearText = ""
+    @State private var acquiredYearShouldClear = false
 
     init(
         isDomainEditEmpty: Bool,
@@ -68,20 +48,24 @@ struct CatalogBatchEditView<DomainContent: View>: View {
                                 .tag(Optional(value))
                         }
                     }
-                    
-                    Picker(
-                        String(localized: "item.detail.acquisition_year"),
-                        selection: $acquiredYearMode
-                    ) {
-                        ForEach(CatalogBatchEditFieldMode.allCases) { mode in
-                            Text(mode.displayName)
-                                .tag(mode)
-                        }
-                    }
 
-                    if acquiredYearMode == .set {
-                        TextField("", text: $acquiredYearText)
-                        .keyboardType(.numberPad)
+                    LabeledContent(String(localized: "item.detail.acquisition_year")) {
+                        HStack(spacing: 8) {
+                            TextField("", text: acquiredYearBinding)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+
+                            Button {
+                                acquiredYearText = ""
+                                acquiredYearShouldClear = true
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.red)
+                            .opacity(acquiredYearShouldClear ? 1 : 0.35)
+                            .accessibilityLabel(String(localized: "common.clear"))
+                        }
                     }
                 }
             }
@@ -125,22 +109,31 @@ struct CatalogBatchEditView<DomainContent: View>: View {
         )
     }
 
+    private var acquiredYearBinding: Binding<String> {
+        Binding(
+            get: { acquiredYearText },
+            set: { value in
+                acquiredYearText = value
+                acquiredYearShouldClear = false
+            }
+        )
+    }
+
     private var acquiredYearChange: BatchEditValue<Int> {
-        switch acquiredYearMode {
-        case .unchanged:
-            return .unchanged
-        case .clear:
+        if acquiredYearShouldClear {
             return .set(nil)
-        case .set:
-            let trimmed = acquiredYearText.trimmingCharacters(in: .whitespacesAndNewlines)
-            return .set(Int(trimmed))
         }
+
+        let trimmed = acquiredYearText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .unchanged }
+        return .set(Int(trimmed))
     }
 
     private var isAcquiredYearValid: Bool {
-        guard acquiredYearMode == .set else { return true }
+        guard !acquiredYearShouldClear else { return true }
 
         let trimmed = acquiredYearText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
         guard let year = Int(trimmed) else { return false }
 
         let maximumYear = Calendar.current.component(.year, from: Date()) + 1

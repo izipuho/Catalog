@@ -4,14 +4,12 @@ import SwiftUI
 struct BookBatchEditView: View {
     let onSave: (ItemBatchEdit, BookBatchEdit) -> Void
 
-    @State private var languageMode: CatalogBatchEditFieldMode = .unchanged
-    @State private var languageCode = ""
-    @State private var genreMode: CatalogBatchEditFieldMode = .unchanged
+    @State private var languageCode: String?
+    @State private var languageShouldClear = false
     @State private var genre = ""
-    @State private var publicationYearMode: CatalogBatchEditFieldMode = .unchanged
+    @State private var genreShouldClear = false
     @State private var publicationYearText = ""
-    @State private var pageCountMode: CatalogBatchEditFieldMode = .unchanged
-    @State private var pageCountText = ""
+    @State private var publicationYearShouldClear = false
 
     private struct LanguageOption: Identifiable {
         let code: String
@@ -43,42 +41,45 @@ struct BookBatchEditView: View {
             }
         ) {
             Section(String(localized: "common.book")) {
-                fieldModePicker(
-                    title: String(localized: "book.field.language"),
-                    selection: $languageMode
-                )
-
-                if languageMode == .set {
-                    Picker(String(localized: "book.field.language"), selection: $languageCode) {
-                        Text("—")
-                            .tag("")
+                HStack(spacing: 8) {
+                    Picker(String(localized: "book.field.language"), selection: languageBinding) {
+                        Text(String(localized: "catalog.batch_edit.keep_unchanged"))
+                            .tag(nil as String?)
                         ForEach(languageOptions) { option in
                             Text("\(option.name) (\(option.code.uppercased()))")
-                                .tag(option.code)
+                                .tag(Optional(option.code))
+                        }
+                    }
+
+                    clearButton(isActive: languageShouldClear) {
+                        languageCode = nil
+                        languageShouldClear = true
+                    }
+                }
+
+                LabeledContent(String(localized: "book.field.genre")) {
+                    HStack(spacing: 8) {
+                        TextField("", text: genreBinding)
+                            .multilineTextAlignment(.trailing)
+
+                        clearButton(isActive: genreShouldClear) {
+                            genre = ""
+                            genreShouldClear = true
                         }
                     }
                 }
 
-                fieldModePicker(
-                    title: String(localized: "book.field.genre"),
-                    selection: $genreMode
-                )
+                LabeledContent(String(localized: "book.field.publication_year")) {
+                    HStack(spacing: 8) {
+                        TextField("", text: publicationYearBinding)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
 
-                if genreMode == .set {
-                    TextField(String(localized: "book.field.genre"), text: $genre)
-                }
-
-                fieldModePicker(
-                    title: String(localized: "book.field.publication_year"),
-                    selection: $publicationYearMode
-                )
-
-                if publicationYearMode == .set {
-                    TextField(
-                        String(localized: "book.field.publication_year"),
-                        text: $publicationYearText
-                    )
-                    .keyboardType(.numberPad)
+                        clearButton(isActive: publicationYearShouldClear) {
+                            publicationYearText = ""
+                            publicationYearShouldClear = true
+                        }
+                    }
                 }
             }
         }
@@ -86,41 +87,63 @@ struct BookBatchEditView: View {
 
     private var bookEdit: BookBatchEdit {
         BookBatchEdit(
-            languageCode: stringChange(mode: languageMode, value: languageCode),
-            genre: stringChange(mode: genreMode, value: genre),
-            pageCount: integerChange(mode: pageCountMode, value: pageCountText),
-            publicationYear: integerChange(mode: publicationYearMode, value: publicationYearText)
+            languageCode: languageChange,
+            genre: stringChange(value: genre, shouldClear: genreShouldClear),
+            pageCount: .unchanged,
+            publicationYear: integerChange(
+                value: publicationYearText,
+                shouldClear: publicationYearShouldClear
+            )
         )
     }
 
     private var isDomainEditValid: Bool {
-        isLanguageValid
-            && isGenreValid
-            && isPageCountValid
-            && isPublicationYearValid
+        isPublicationYearValid
     }
 
-    private var isLanguageValid: Bool {
-        languageMode != .set || !languageCode.isEmpty
+    private var languageBinding: Binding<String?> {
+        Binding(
+            get: { languageCode },
+            set: { value in
+                languageCode = value
+                languageShouldClear = false
+            }
+        )
     }
 
-    private var isGenreValid: Bool {
-        guard genreMode == .set else { return true }
-        return !genre.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var genreBinding: Binding<String> {
+        Binding(
+            get: { genre },
+            set: { value in
+                genre = value
+                genreShouldClear = false
+            }
+        )
     }
 
-    private var isPageCountValid: Bool {
-        guard pageCountMode == .set else { return true }
+    private var publicationYearBinding: Binding<String> {
+        Binding(
+            get: { publicationYearText },
+            set: { value in
+                publicationYearText = value
+                publicationYearShouldClear = false
+            }
+        )
+    }
 
-        let trimmed = pageCountText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let number = Int(trimmed) else { return false }
-        return number > 0
+    private var languageChange: BatchEditValue<String> {
+        if languageShouldClear {
+            return .set(nil)
+        }
+        guard let languageCode else { return .unchanged }
+        return .set(languageCode)
     }
 
     private var isPublicationYearValid: Bool {
-        guard publicationYearMode == .set else { return true }
+        guard !publicationYearShouldClear else { return true }
 
         let trimmed = publicationYearText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
         guard let year = Int(trimmed) else { return false }
 
         let maximumYear = Calendar.current.component(.year, from: Date()) + 1
@@ -128,45 +151,42 @@ struct BookBatchEditView: View {
     }
 
     private func stringChange(
-        mode: CatalogBatchEditFieldMode,
-        value: String
+        value: String,
+        shouldClear: Bool
     ) -> BatchEditValue<String> {
-        switch mode {
-        case .unchanged:
-            return .unchanged
-        case .clear:
+        if shouldClear {
             return .set(nil)
-        case .set:
-            return .set(value.trimmingCharacters(in: .whitespacesAndNewlines))
         }
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .unchanged }
+        return .set(trimmed)
     }
 
     private func integerChange(
-        mode: CatalogBatchEditFieldMode,
-        value: String
+        value: String,
+        shouldClear: Bool
     ) -> BatchEditValue<Int> {
-        switch mode {
-        case .unchanged:
-            return .unchanged
-        case .clear:
+        if shouldClear {
             return .set(nil)
-        case .set:
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            return .set(Int(trimmed))
         }
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .unchanged }
+        return .set(Int(trimmed))
     }
 
-    @ViewBuilder
-    private func fieldModePicker(
-        title: String,
-        selection: Binding<CatalogBatchEditFieldMode>
+    private func clearButton(
+        isActive: Bool,
+        action: @escaping () -> Void
     ) -> some View {
-        Picker(title, selection: selection) {
-            ForEach(CatalogBatchEditFieldMode.allCases) { mode in
-                Text(mode.displayName)
-                    .tag(mode)
-            }
+        Button(action: action) {
+            Image(systemName: "xmark.circle.fill")
         }
+        .buttonStyle(.plain)
+        .foregroundStyle(.red)
+        .opacity(isActive ? 1 : 0.35)
+        .accessibilityLabel(String(localized: "common.clear"))
     }
 }
 
