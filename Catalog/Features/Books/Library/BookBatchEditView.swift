@@ -129,6 +129,12 @@ struct BookBatchEditView: View {
     }
 }
 
+#if DEBUG
+#Preview {
+    BookBatchEditView { _, _ in }
+}
+#endif
+
 extension CatalogCardManagementModifier where Item == BookRecord {
     init(
         state: Binding<CatalogCardManagementState<BookRecord>>,

@@ -44,6 +44,12 @@ struct BellBatchEditView: View {
     }
 }
 
+#if DEBUG
+#Preview {
+    BellBatchEditView { _, _ in }
+}
+#endif
+
 extension CatalogCardManagementModifier where Item == BellListItem {
     init(
         state: Binding<CatalogCardManagementState<BellListItem>>,
