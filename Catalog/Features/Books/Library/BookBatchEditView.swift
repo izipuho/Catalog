@@ -4,13 +4,13 @@ import SwiftUI
 struct BookBatchEditView: View {
     let onSave: (ItemBatchEdit, BookBatchEdit) -> Void
 
-    @State private var isEditingLanguage = false
+    @State private var languageMode: CatalogBatchEditFieldMode = .unchanged
     @State private var languageCode = ""
-    @State private var isEditingGenre = false
+    @State private var genreMode: CatalogBatchEditFieldMode = .unchanged
     @State private var genre = ""
-    @State private var isEditingPublicationYear = false
+    @State private var publicationYearMode: CatalogBatchEditFieldMode = .unchanged
     @State private var publicationYearText = ""
-    @State private var isEditingPageCount = false
+    @State private var pageCountMode: CatalogBatchEditFieldMode = .unchanged
     @State private var pageCountText = ""
 
     private struct LanguageOption: Identifiable {
@@ -42,11 +42,15 @@ struct BookBatchEditView: View {
                 onSave(itemEdit, bookEdit)
             }
         ) {
-            Section {
-                Toggle(String(localized: "book.field.language"), isOn: $isEditingLanguage)
-                if isEditingLanguage {
+            Section(String(localized: "common.book")) {
+                fieldModePicker(
+                    title: String(localized: "book.field.language"),
+                    selection: $languageMode
+                )
+
+                if languageMode == .set {
                     Picker(String(localized: "book.field.language"), selection: $languageCode) {
-                        Text(String(localized: "common.none"))
+                        Text("—")
                             .tag("")
                         ForEach(languageOptions) { option in
                             Text("\(option.name) (\(option.code.uppercased()))")
@@ -55,77 +59,127 @@ struct BookBatchEditView: View {
                     }
                 }
 
-                Toggle(String(localized: "book.field.genre"), isOn: $isEditingGenre)
-                if isEditingGenre {
+                fieldModePicker(
+                    title: String(localized: "book.field.genre"),
+                    selection: $genreMode
+                )
+
+                if genreMode == .set {
                     TextField(String(localized: "book.field.genre"), text: $genre)
                 }
 
-                Toggle(String(localized: "book.field.publication_year"), isOn: $isEditingPublicationYear)
-                if isEditingPublicationYear {
-                    TextField(String(localized: "book.field.publication_year"), text: $publicationYearText)
-                        .keyboardType(.numberPad)
+                fieldModePicker(
+                    title: String(localized: "book.field.publication_year"),
+                    selection: $publicationYearMode
+                )
+
+                if publicationYearMode == .set {
+                    TextField(
+                        String(localized: "book.field.publication_year"),
+                        text: $publicationYearText
+                    )
+                    .keyboardType(.numberPad)
                 }
 
-                Toggle(String(localized: "book.field.pages"), isOn: $isEditingPageCount)
-                if isEditingPageCount {
-                    TextField(String(localized: "book.field.pages"), text: $pageCountText)
-                        .keyboardType(.numberPad)
+                fieldModePicker(
+                    title: String(localized: "book.field.pages"),
+                    selection: $pageCountMode
+                )
+
+                if pageCountMode == .set {
+                    TextField(
+                        String(localized: "book.field.pages"),
+                        text: $pageCountText
+                    )
+                    .keyboardType(.numberPad)
                 }
-            } header: {
-                Text(String(localized: "common.book"))
-            } footer: {
-                Text(String(localized: "catalog.batch_edit.empty_clears"))
             }
         }
     }
 
     private var bookEdit: BookBatchEdit {
         BookBatchEdit(
-            languageCode: stringChange(isEditing: isEditingLanguage, value: languageCode),
-            genre: stringChange(isEditing: isEditingGenre, value: genre),
-            pageCount: integerChange(isEditing: isEditingPageCount, value: pageCountText),
-            publicationYear: integerChange(isEditing: isEditingPublicationYear, value: publicationYearText)
+            languageCode: stringChange(mode: languageMode, value: languageCode),
+            genre: stringChange(mode: genreMode, value: genre),
+            pageCount: integerChange(mode: pageCountMode, value: pageCountText),
+            publicationYear: integerChange(mode: publicationYearMode, value: publicationYearText)
         )
     }
 
     private var isDomainEditValid: Bool {
-        isPositiveIntegerValid(isEditing: isEditingPageCount, value: pageCountText)
+        isLanguageValid
+            && isGenreValid
+            && isPageCountValid
             && isPublicationYearValid
     }
 
+    private var isLanguageValid: Bool {
+        languageMode != .set || !languageCode.isEmpty
+    }
+
+    private var isGenreValid: Bool {
+        guard genreMode == .set else { return true }
+        return !genre.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var isPageCountValid: Bool {
+        guard pageCountMode == .set else { return true }
+
+        let trimmed = pageCountText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let number = Int(trimmed) else { return false }
+        return number > 0
+    }
+
     private var isPublicationYearValid: Bool {
-        guard isEditingPublicationYear else { return true }
+        guard publicationYearMode == .set else { return true }
 
         let trimmed = publicationYearText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return true }
         guard let year = Int(trimmed) else { return false }
 
         let maximumYear = Calendar.current.component(.year, from: Date()) + 1
         return (1...maximumYear).contains(year)
     }
 
-    private func isPositiveIntegerValid(isEditing: Bool, value: String) -> Bool {
-        guard isEditing else { return true }
-
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return true }
-        guard let number = Int(trimmed) else { return false }
-        return number > 0
+    private func stringChange(
+        mode: CatalogBatchEditFieldMode,
+        value: String
+    ) -> BatchEditValue<String> {
+        switch mode {
+        case .unchanged:
+            return .unchanged
+        case .clear:
+            return .set(nil)
+        case .set:
+            return .set(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
     }
 
-    private func stringChange(isEditing: Bool, value: String) -> BatchEditValue<String> {
-        guard isEditing else { return .unchanged }
-
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return .set(nil) }
-        return .set(trimmed)
+    private func integerChange(
+        mode: CatalogBatchEditFieldMode,
+        value: String
+    ) -> BatchEditValue<Int> {
+        switch mode {
+        case .unchanged:
+            return .unchanged
+        case .clear:
+            return .set(nil)
+        case .set:
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .set(Int(trimmed))
+        }
     }
 
-    private func integerChange(isEditing: Bool, value: String) -> BatchEditValue<Int> {
-        guard isEditing else { return .unchanged }
-
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return .set(trimmed.isEmpty ? nil : Int(trimmed))
+    @ViewBuilder
+    private func fieldModePicker(
+        title: String,
+        selection: Binding<CatalogBatchEditFieldMode>
+    ) -> some View {
+        Picker(title, selection: selection) {
+            ForEach(CatalogBatchEditFieldMode.allCases) { mode in
+                Text(mode.displayName)
+                    .tag(mode)
+            }
+        }
     }
 }
 

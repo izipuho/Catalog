@@ -1,5 +1,25 @@
 import SwiftUI
 
+/// Describes how an optional value should be handled by a batch editor.
+enum CatalogBatchEditFieldMode: String, CaseIterable, Identifiable {
+    case unchanged
+    case clear
+    case set
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .unchanged:
+            return String(localized: "catalog.batch_edit.keep_unchanged")
+        case .clear:
+            return String(localized: "common.clear")
+        case .set:
+            return String(localized: "catalog.batch_edit.set")
+        }
+    }
+}
+
 /// Hosts fields shared by all catalog batch editors and optional domain-specific sections.
 struct CatalogBatchEditView<DomainContent: View>: View {
     let isDomainEditEmpty: Bool
@@ -11,7 +31,7 @@ struct CatalogBatchEditView<DomainContent: View>: View {
     @State private var condition: ItemCondition?
     @State private var acquisitionMethod: AcquisitionMethod?
     @State private var favorite: Bool?
-    @State private var isEditingAcquiredYear = false
+    @State private var acquiredYearMode: CatalogBatchEditFieldMode = .unchanged
     @State private var acquiredYearText = ""
     @State private var tagToAddInput = ""
     @State private var tagsToAdd: [String] = []
@@ -64,25 +84,24 @@ struct CatalogBatchEditView<DomainContent: View>: View {
                     }
                 }
 
-                Section {
-                    Toggle(
-                        String(localized: "catalog.batch_edit.acquired_year.change"),
-                        isOn: $isEditingAcquiredYear
-                    )
+                Section(String(localized: "catalog.batch_edit.acquired_year")) {
+                    Picker(
+                        String(localized: "catalog.batch_edit.acquired_year"),
+                        selection: $acquiredYearMode
+                    ) {
+                        ForEach(CatalogBatchEditFieldMode.allCases) { mode in
+                            Text(mode.displayName)
+                                .tag(mode)
+                        }
+                    }
 
-                    if isEditingAcquiredYear {
+                    if acquiredYearMode == .set {
                         TextField(
                             String(localized: "catalog.batch_edit.acquired_year.placeholder"),
                             text: $acquiredYearText
                         )
                         .keyboardType(.numberPad)
-
-                        Text(String(localized: "catalog.batch_edit.acquired_year.clear_hint"))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
                     }
-                } header: {
-                    Text(String(localized: "catalog.batch_edit.acquired_year"))
                 }
 
                 Section(String(localized: "catalog.batch_edit.tags.add")) {
@@ -143,17 +162,21 @@ struct CatalogBatchEditView<DomainContent: View>: View {
     }
 
     private var acquiredYearChange: BatchEditValue<Int> {
-        guard isEditingAcquiredYear else { return .unchanged }
-
-        let trimmed = acquiredYearText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return .set(trimmed.isEmpty ? nil : Int(trimmed))
+        switch acquiredYearMode {
+        case .unchanged:
+            return .unchanged
+        case .clear:
+            return .set(nil)
+        case .set:
+            let trimmed = acquiredYearText.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .set(Int(trimmed))
+        }
     }
 
     private var isAcquiredYearValid: Bool {
-        guard isEditingAcquiredYear else { return true }
+        guard acquiredYearMode == .set else { return true }
 
         let trimmed = acquiredYearText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return true }
         guard let year = Int(trimmed) else { return false }
 
         let maximumYear = Calendar.current.component(.year, from: Date()) + 1
