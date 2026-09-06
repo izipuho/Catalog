@@ -379,48 +379,30 @@ struct BookEditorView: View {
                     }
                 }
 
-                Section("book.section.contributors") {
-                    ForEach(contributors.indices, id: \.self) { index in
-                        let contributor = contributors[index]
+                BookContributorsEditorSubview(
+                    rowCount: contributors.count,
+                    onDelete: deleteContributors
+                ) { index in
+                    let contributor = contributors[index]
 
-                        VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
-                            Button {
-                                editingContributorIndex = index
-                                isPresentingContributorEditor = true
-                            } label: {
-                                HStack {
-                                    Text(contributor.role.displayName)
-                                        .foregroundStyle(.secondary)
-
-                                    Spacer()
-
-                                    Text(contributor.person.displayName)
-                                        .foregroundStyle(.primary)
-                                        .multilineTextAlignment(.trailing)
-
-                                    if let statusSystemImage = assignedReferenceStatusSystemImage(for: .author(index)) {
-                                        Image(systemName: statusSystemImage)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    Image(systemName: "chevron.right")
-                                        .font(CatalogTypography.chipLabel)
-                                        .foregroundStyle(.tertiary)
-                                }
-                            }
-                            .buttonStyle(.plain)
-
-                            if contributor.role == .author {
-                                assignedTextFragments(for: .author(index))
-                            }
+                    VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
+                        BookContributorEditorRow(
+                            role: contributor.role,
+                            person: contributor.person,
+                            statusSystemImage: assignedReferenceStatusSystemImage(for: .author(index))
+                        ) {
+                            editingContributorIndex = index
+                            isPresentingContributorEditor = true
                         }
-                        .dropDestination(for: TextFragmentTransfer.self) { items, _ in
-                            appendTextFragments(items, toContributorAt: index)
+
+                        if contributor.role == .author {
+                            assignedTextFragments(for: .author(index))
                         }
                     }
-                    .onDelete(perform: deleteContributors)
-
+                    .dropDestination(for: TextFragmentTransfer.self) { items, _ in
+                        appendTextFragments(items, toContributorAt: index)
+                    }
+                } addContent: {
                     Button {
                         editingContributorIndex = nil
                         isPresentingContributorEditor = true
@@ -639,17 +621,40 @@ struct BookEditorView: View {
                 syncTextFragments(from: recognizedText)
             }
             .sheet(isPresented: $isPresentingContributorEditor) {
+                let contributor = editingContributorIndex.flatMap { index in
+                    contributors.indices.contains(index) ? contributors[index] : nil
+                }
+
                 BookContributorEditorView(
-                    contributor: editingContributorIndex.flatMap { index in
-                        contributors.indices.contains(index) ? contributors[index] : nil
-                    },
+                    title: contributor == nil
+                        ? String(localized: "book_contributor.action.add")
+                        : String(localized: "book_contributor.action.edit"),
+                    role: contributor?.role ?? .author,
+                    person: contributor?.person,
                     people: availablePeople,
-                    existingContributors: contributors,
-                    editingIndex: editingContributorIndex,
                     onCreatePerson: { newPerson in
                         catalogPeople.append(newPerson)
                     },
-                    onSave: saveContributor
+                    validationMessage: { role, person in
+                        guard let person else { return nil }
+                        let isDuplicate = contributors.enumerated().contains { index, existing in
+                            index != editingContributorIndex
+                                && existing.role == role
+                                && existing.person.id == person.id
+                        }
+                        return isDuplicate
+                            ? String(localized: "book_contributor.validation.duplicate_role")
+                            : nil
+                    },
+                    onSave: { role, person in
+                        saveContributor(
+                            BookContributor(
+                                role: role,
+                                order: contributor?.order ?? contributors.count,
+                                person: person
+                            )
+                        )
+                    }
                 )
             }
             .sheet(isPresented: $isPresentingIdentifierEditor) {
@@ -1677,230 +1682,6 @@ private struct BookPublisherSelectionView: View {
                 }
             }
             .navigationTitle("publisher.title")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "picker.search_or_add")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(String(localized: "common.cancel"))
-                }
-            }
-        }
-    }
-}
-
-private struct BookContributorEditorView: View {
-    let contributor: BookContributor?
-    let people: [Person]
-    let existingContributors: [BookContributor]
-    let editingIndex: Int?
-    let onCreatePerson: (Person) -> Void
-    let onSave: (BookContributor) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var role: BookContributorRole
-    @State private var selectedPerson: Person?
-    @State private var isPresentingPersonPicker = false
-
-    init(
-        contributor: BookContributor?,
-        people: [Person],
-        existingContributors: [BookContributor],
-        editingIndex: Int?,
-        onCreatePerson: @escaping (Person) -> Void,
-        onSave: @escaping (BookContributor) -> Void
-    ) {
-        self.contributor = contributor
-        self.people = people
-        self.existingContributors = existingContributors
-        self.editingIndex = editingIndex
-        self.onCreatePerson = onCreatePerson
-        self.onSave = onSave
-        _role = State(initialValue: contributor?.role ?? .author)
-        _selectedPerson = State(initialValue: contributor?.person)
-    }
-
-    private var isDuplicate: Bool {
-        guard let selectedPerson else { return false }
-
-        return existingContributors.enumerated().contains { index, existing in
-            index != editingIndex
-                && existing.role == role
-                && existing.person.id == selectedPerson.id
-        }
-    }
-
-    private var canSave: Bool {
-        selectedPerson != nil && !isDuplicate
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("book_contributor.section.contribution") {
-                    Picker("book_contributor.field.role", selection: $role) {
-                        ForEach(BookContributorRole.allCases) { role in
-                            Text(role.displayName).tag(role)
-                        }
-                    }
-
-                    Button {
-                        isPresentingPersonPicker = true
-                    } label: {
-                        HStack {
-                            Text("person.title")
-                                .foregroundStyle(.primary)
-
-                            Spacer()
-
-                            Text(selectedPerson?.displayName ?? String(localized: "common.none"))
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.trailing)
-
-                            Image(systemName: "chevron.right")
-                                .font(CatalogTypography.chipLabel)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-
-                    if isDuplicate {
-                        Label(
-                            "book_contributor.validation.duplicate_role",
-                            systemImage: "exclamationmark.circle.fill"
-                        )
-                        .font(.footnote)
-                        .foregroundStyle(CatalogSemanticColors.destructive)
-                    }
-                }
-            }
-            .navigationTitle(contributor == nil ? String(localized: "book_contributor.action.add") : String(localized: "book_contributor.action.edit"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(String(localized: "common.cancel"))
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        guard let selectedPerson else { return }
-                        onSave(
-                            BookContributor(
-                                role: role,
-                                order: contributor?.order ?? existingContributors.count,
-                                person: selectedPerson
-                            )
-                        )
-                        dismiss()
-                    } label: {
-                        Image(systemName: "checkmark")
-                    }
-                    .disabled(!canSave)
-                    .accessibilityLabel(String(localized: "common.save"))
-                }
-            }
-            .sheet(isPresented: $isPresentingPersonPicker) {
-                BookPersonSelectionView(
-                    selection: $selectedPerson,
-                    people: people,
-                    onCreate: onCreatePerson
-                )
-            }
-        }
-    }
-}
-
-private struct BookPersonSelectionView: View {
-    @Binding var selection: Person?
-    let people: [Person]
-    let onCreate: (Person) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-
-    private var filteredPeople: [Person] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return people }
-        return people.filter { $0.displayName.localizedCaseInsensitiveContains(query) }
-    }
-
-    private var newPersonName: String? {
-        let candidate = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !candidate.isEmpty else { return nil }
-        guard !people.contains(where: { $0.displayName.caseInsensitiveCompare(candidate) == .orderedSame }) else {
-            return nil
-        }
-        return candidate
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if let newPersonName {
-                    Button {
-                        let newPerson = Person(
-                            id: UUID(),
-                            givenName: newPersonName,
-                            birthYear: nil,
-                            deathYear: nil,
-                            biography: nil,
-                            birthPlace: nil,
-                            deathPlace: nil,
-                            photos: []
-                        )
-                        onCreate(newPerson)
-                        selection = newPerson
-                        dismiss()
-                    } label: {
-                        Label(
-                            String.localizedStringWithFormat(String(localized: "common.action.add_value"), newPersonName),
-                            systemImage: "plus.circle.fill"
-                        )
-                    }
-                }
-
-                Button {
-                    selection = nil
-                    dismiss()
-                } label: {
-                    HStack {
-                        Text(String(localized: "common.none"))
-                            .foregroundStyle(.primary)
-
-                        Spacer()
-
-                        if selection == nil {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.tint)
-                        }
-                    }
-                }
-
-                ForEach(filteredPeople) { person in
-                    Button {
-                        selection = person
-                        dismiss()
-                    } label: {
-                        HStack {
-                            Text(person.displayName)
-                                .foregroundStyle(.primary)
-
-                            Spacer()
-
-                            if selection?.id == person.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("person.title")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "picker.search_or_add")
             .toolbar {
