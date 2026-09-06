@@ -241,6 +241,47 @@ struct CatalogInteractiveCard<Content: View>: View {
     }
 }
 
+extension CatalogInteractiveCard {
+    init<Item: Identifiable>(
+        item: Item,
+        state: Binding<CatalogCardManagementState<Item>>,
+        cardSize: CGSize,
+        canManage: Bool,
+        shouldHandleTap: @escaping (Item) -> Bool = { _ in true },
+        onOpen: @escaping (Item) -> Void,
+        selectTitle: String,
+        moveTitle: String,
+        @ViewBuilder content: @escaping () -> Content
+    ) where Item.ID == UUID {
+        self.cardSize = cardSize
+        self.isSelected = state.wrappedValue.selectedIDs.contains(item.id)
+        self.isSelectionModeEnabled = state.wrappedValue.isSelectionModeEnabled
+        self.onTap = {
+            guard shouldHandleTap(item) else { return }
+
+            if state.wrappedValue.isSelectionModeEnabled {
+                state.wrappedValue.toggleSelection(of: item)
+            } else {
+                onOpen(item)
+            }
+        }
+        self.onSelect = canManage ? {
+            state.wrappedValue.enterSelection(with: item)
+        } : nil
+        self.selectTitle = selectTitle
+        self.contextMenu = canManage ? {
+            AnyView(
+                CatalogCardManagementMenu(
+                    moveTitle: moveTitle,
+                    onMove: { state.wrappedValue.beginMove(item) },
+                    onDelete: { state.wrappedValue.beginDelete(item) }
+                )
+            )
+        } : nil
+        self.content = content
+    }
+}
+
 /// Shared Move/Delete actions used by catalog item-card context menus.
 struct CatalogCardManagementMenu: View {
     let moveTitle: String
