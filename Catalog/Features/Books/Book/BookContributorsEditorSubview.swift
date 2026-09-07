@@ -1,89 +1,57 @@
 import SwiftUI
 
-/// Renders the shared contributors section while leaving contributor state semantics to the caller.
-struct BookContributorsEditorSubview<RowContent: View, AddContent: View>: View {
-    let rowCount: Int
-    let onDelete: (IndexSet) -> Void
-
-    private let rowContent: (Int) -> RowContent
-    private let addContent: () -> AddContent
-
-    init(
-        rowCount: Int,
-        onDelete: @escaping (IndexSet) -> Void,
-        @ViewBuilder rowContent: @escaping (Int) -> RowContent,
-        @ViewBuilder addContent: @escaping () -> AddContent
-    ) {
-        self.rowCount = rowCount
-        self.onDelete = onDelete
-        self.rowContent = rowContent
-        self.addContent = addContent
-    }
-
-    var body: some View {
-        Section("book.section.contributors") {
-            ForEach(0..<rowCount, id: \.self) { index in
-                rowContent(index)
-            }
+@ViewBuilder
+func BookContributorsEditorSubview<RowContent: View, AddContent: View>(
+    rowCount: Int,
+    onDelete: @escaping (IndexSet) -> Void,
+    @ViewBuilder rowContent: @escaping (Int) -> RowContent,
+    @ViewBuilder addContent: @escaping () -> AddContent
+) -> some View {
+    Section("book.section.contributors") {
+        ForEach(0..<rowCount, id: \.self, content: rowContent)
             .onDelete(perform: onDelete)
-
-            addContent()
-        }
+        addContent()
     }
 }
 
-/// Displays a contributor or a pending batch clear using the same row layout.
-struct BookContributorEditorRow: View {
-    let role: BookContributorRole
-    let person: Person?
-    let statusSystemImage: String?
-    let onTap: () -> Void
+@ViewBuilder
+func BookContributorEditorRow(
+    role: BookContributorRole,
+    person: Person?,
+    statusSystemImage: String? = nil,
+    onTap: @escaping () -> Void
+) -> some View {
+    Button(action: onTap) {
+        HStack {
+            Text(role.displayName)
+                .foregroundStyle(.secondary)
 
-    init(
-        role: BookContributorRole,
-        person: Person?,
-        statusSystemImage: String? = nil,
-        onTap: @escaping () -> Void
-    ) {
-        self.role = role
-        self.person = person
-        self.statusSystemImage = statusSystemImage
-        self.onTap = onTap
-    }
+            Spacer()
 
-    var body: some View {
-        Button(action: onTap) {
-            HStack {
-                Text(role.displayName)
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                if let person {
-                    Text(person.displayName)
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.trailing)
-                } else {
-                    Text(String(localized: "common.clear"))
-                        .foregroundStyle(.red)
-                }
-
-                if let statusSystemImage {
-                    Image(systemName: statusSystemImage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Image(systemName: "chevron.right")
-                    .font(CatalogTypography.chipLabel)
-                    .foregroundStyle(.tertiary)
+            if let person {
+                Text(person.displayName)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.trailing)
+            } else {
+                Text(String(localized: "common.clear"))
+                    .foregroundStyle(.red)
             }
+
+            if let statusSystemImage {
+                Image(systemName: statusSystemImage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Image(systemName: "chevron.right")
+                .font(CatalogTypography.chipLabel)
+                .foregroundStyle(.tertiary)
         }
-        .buttonStyle(.plain)
     }
+    .buttonStyle(.plain)
 }
 
-/// Edits one contributor selection. Callers define validation, clear semantics, and persistence.
+/// Shared editor for one contributor. Callers keep ownership of validation and persistence semantics.
 struct BookContributorEditorView: View {
     let title: String
     let people: [Person]
@@ -111,7 +79,7 @@ struct BookContributorEditorView: View {
     ) {
         self.title = title
         self.people = people
-        self.availableRoles = availableRoles.isEmpty ? [role] : availableRoles
+        self.availableRoles = availableRoles
         self.onCreatePerson = onCreatePerson
         self.onClear = onClear
         self.validationMessage = validationMessage
@@ -120,12 +88,8 @@ struct BookContributorEditorView: View {
         _selectedPerson = State(initialValue: person)
     }
 
-    private var currentValidationMessage: String? {
+    private var validation: String? {
         validationMessage(role, selectedPerson)
-    }
-
-    private var canSave: Bool {
-        selectedPerson != nil && currentValidationMessage == nil
     }
 
     var body: some View {
@@ -134,38 +98,30 @@ struct BookContributorEditorView: View {
                 Section("book_contributor.section.contribution") {
                     Picker("book_contributor.field.role", selection: $role) {
                         ForEach(availableRoles) { role in
-                            Text(role.displayName)
-                                .tag(role)
+                            Text(role.displayName).tag(role)
                         }
                     }
 
                     Button {
                         isPresentingPersonPicker = true
                     } label: {
-                        HStack {
-                            Text("person.title")
-                                .foregroundStyle(.primary)
-
-                            Spacer()
-
-                            Text(selectedPerson?.displayName ?? String(localized: "common.none"))
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.trailing)
-
-                            Image(systemName: "chevron.right")
-                                .font(CatalogTypography.chipLabel)
-                                .foregroundStyle(.tertiary)
+                        LabeledContent("person.title") {
+                            HStack(spacing: CatalogMetrics.Spacing.xs) {
+                                Text(selectedPerson?.displayName ?? String(localized: "common.none"))
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.trailing)
+                                Image(systemName: "chevron.right")
+                                    .font(CatalogTypography.chipLabel)
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
                     }
                     .buttonStyle(.plain)
 
-                    if let currentValidationMessage {
-                        Label(
-                            currentValidationMessage,
-                            systemImage: "exclamationmark.circle.fill"
-                        )
-                        .font(.footnote)
-                        .foregroundStyle(CatalogSemanticColors.destructive)
+                    if let validation {
+                        Label(validation, systemImage: "exclamationmark.circle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(CatalogSemanticColors.destructive)
                     }
                 }
 
@@ -198,7 +154,7 @@ struct BookContributorEditorView: View {
                     } label: {
                         Image(systemName: "checkmark")
                     }
-                    .disabled(!canSave)
+                    .disabled(selectedPerson == nil || validation != nil)
                     .accessibilityLabel(String(localized: "common.save"))
                 }
             }
@@ -213,7 +169,7 @@ struct BookContributorEditorView: View {
     }
 }
 
-struct BookPersonSelectionView: View {
+private struct BookPersonSelectionView: View {
     @Binding var selection: Person?
     let people: [Person]
     let onCreate: ((Person) -> Void)?
@@ -223,28 +179,29 @@ struct BookPersonSelectionView: View {
 
     private var filteredPeople: [Person] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return people }
-        return people.filter { $0.displayName.localizedCaseInsensitiveContains(query) }
+        return query.isEmpty
+            ? people
+            : people.filter { $0.displayName.localizedCaseInsensitiveContains(query) }
     }
 
     private var newPersonName: String? {
         guard onCreate != nil else { return nil }
-        let candidate = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !candidate.isEmpty else { return nil }
-        guard !people.contains(where: { $0.displayName.caseInsensitiveCompare(candidate) == .orderedSame }) else {
+        let name = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty,
+              !people.contains(where: { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }) else {
             return nil
         }
-        return candidate
+        return name
     }
 
     var body: some View {
         NavigationStack {
             List {
-                if let newPersonName, let onCreate {
+                if let name = newPersonName, let onCreate {
                     Button {
-                        let newPerson = Person(
+                        let person = Person(
                             id: UUID(),
-                            givenName: newPersonName,
+                            givenName: name,
                             birthYear: nil,
                             deathYear: nil,
                             biography: nil,
@@ -252,50 +209,32 @@ struct BookPersonSelectionView: View {
                             deathPlace: nil,
                             photos: []
                         )
-                        onCreate(newPerson)
-                        selection = newPerson
+                        onCreate(person)
+                        selection = person
                         dismiss()
                     } label: {
                         Label(
-                            String.localizedStringWithFormat(String(localized: "common.action.add_value"), newPersonName),
+                            String.localizedStringWithFormat(String(localized: "common.action.add_value"), name),
                             systemImage: "plus.circle.fill"
                         )
                     }
                 }
 
-                Button {
+                selectionRow(
+                    title: String(localized: "common.none"),
+                    isSelected: selection == nil
+                ) {
                     selection = nil
                     dismiss()
-                } label: {
-                    HStack {
-                        Text(String(localized: "common.none"))
-                            .foregroundStyle(.primary)
-
-                        Spacer()
-
-                        if selection == nil {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.tint)
-                        }
-                    }
                 }
 
                 ForEach(filteredPeople) { person in
-                    Button {
+                    selectionRow(
+                        title: person.displayName,
+                        isSelected: selection?.id == person.id
+                    ) {
                         selection = person
                         dismiss()
-                    } label: {
-                        HStack {
-                            Text(person.displayName)
-                                .foregroundStyle(.primary)
-
-                            Spacer()
-
-                            if selection?.id == person.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            }
-                        }
                     }
                 }
             }
@@ -303,11 +242,7 @@ struct BookPersonSelectionView: View {
             .navigationBarTitleDisplayMode(.inline)
             .searchable(
                 text: $searchText,
-                prompt: Text(
-                    onCreate == nil
-                        ? String(localized: "person.title")
-                        : String(localized: "picker.search_or_add")
-                )
+                prompt: Text(onCreate == nil ? String(localized: "person.title") : String(localized: "picker.search_or_add"))
             )
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -315,6 +250,24 @@ struct BookPersonSelectionView: View {
                         Image(systemName: "xmark")
                     }
                     .accessibilityLabel(String(localized: "common.cancel"))
+                }
+            }
+        }
+    }
+
+    private func selectionRow(
+        title: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                    .foregroundStyle(.primary)
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(.tint)
                 }
             }
         }
