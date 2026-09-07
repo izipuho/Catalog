@@ -55,6 +55,7 @@ struct LibraryView: View {
     @State private var isFavoritesCollapsed = false
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var favoriteChangeRevision = 0
+    @State private var cardManagement = CatalogCardManagementState<BookRecord>()
     @StateObject private var viewModel: LibraryViewModel
 
     private let imageMediaBuilder = ImageMediaBuilder(store: .shared)
@@ -118,6 +119,10 @@ struct LibraryView: View {
         catalogSnapshot?.homes ?? []
     }
 
+    private var storageContext: CatalogStorageContext {
+        CatalogStorageContext(snapshot: catalogSnapshot, collection: collection)
+    }
+
     private var hasPlacedItems: Bool {
         catalogSnapshot?.bookRecords.contains {
             $0.collectionID == collection.id && $0.item.locationID != nil
@@ -174,9 +179,11 @@ struct LibraryView: View {
             }
             .onChange(of: selectedOrderRawValue) { _, _ in
                 viewModel.updateContext(orderMode: selectedOrder)
+                cardManagement.pruneSelection(to: visibleBooks)
             }
             .onChange(of: filters) { _, newValue in
                 viewModel.updateContext(filters: newValue)
+                cardManagement.pruneSelection(to: visibleBooks)
             }
             .onReceive(NotificationCenter.default.publisher(for: .catalogItemFavoriteDidChange)) { notification in
                 guard
@@ -241,6 +248,33 @@ struct LibraryView: View {
             .sheet(isPresented: $isPresentingEditLibrary) {
                 editLibrarySheet
             }
+            .modifier(
+                CatalogCardManagementModifier(
+                    state: $cardManagement,
+                    visibleItems: visibleBooks,
+                    snapshot: catalogSnapshot,
+                    collection: collection,
+                    currentLocationID: { $0.item.locationID },
+                    moveTitle: String(localized: "bell.context.move"),
+                    deleteTitle: String(localized: "book.delete.title"),
+                    deleteMessage: String(localized: "book.delete.message"),
+                    selectedTitle: { count in
+                        String.localizedStringWithFormat(
+                            String(localized: "common.selected_format"),
+                            CollectionKind.bookCountLabel(for: count)
+                        )
+                    },
+                    canEdit: canEditLibrary,
+                    tint: collection.backgroundStyle.accentColor,
+                    onSaveHome: { home, locations in
+                        repository.saveHome(home)
+                        repository.saveLocations(locations, in: home.id)
+                    },
+                    onMove: moveBooks,
+                    onDelete: deleteBooks,
+                    onBatchEdit: batchEditBooks
+                )
+            )
             .task(id: collection.id) {
                 await loadCollectionSharingState()
             }
@@ -276,31 +310,33 @@ struct LibraryView: View {
                     spacing: CatalogMetrics.Spacing.lg,
                     pinnedViews: displayModel.layout.isGrouped ? [.sectionHeaders] : []
                 ) {
-                    LibraryDashboardView(
-                        stats: displayModel.stats,
-                        accentColor: collection.backgroundStyle.accentColor,
-                        collection: collection,
-                        catalogSnapshot: catalogSnapshot,
-                        repository: repository,
-                        canEditCollection: canEditLibrary,
-                        onBookSelected: onBookSelected,
-                        sharingState: collectionSharingState,
-                        sharingService: CloudKitCollectionSharingService(persistentContainer: coreDataContainer),
-                        onSharingChanged: {
-                            Task {
-                                await loadCollectionSharingState()
+                    if !cardManagement.isSelectionModeEnabled {
+                        LibraryDashboardView(
+                            stats: displayModel.stats,
+                            accentColor: collection.backgroundStyle.accentColor,
+                            collection: collection,
+                            catalogSnapshot: catalogSnapshot,
+                            repository: repository,
+                            canEditCollection: canEditLibrary,
+                            onBookSelected: onBookSelected,
+                            sharingState: collectionSharingState,
+                            sharingService: CloudKitCollectionSharingService(persistentContainer: coreDataContainer),
+                            onSharingChanged: {
+                                Task {
+                                    await loadCollectionSharingState()
+                                }
+                            },
+                            onFilterApply: { filter in
+                                filters = BookFilters(presence: [filter])
                             }
-                        },
-                        onFilterApply: { filter in
-                            filters = BookFilters(presence: [filter])
-                        }
-                    )
+                        )
+                    }
 
                     if hasActiveFilter {
                         activeFilterSection
                     }
 
-                    if !favoriteBooks.isEmpty {
+                    if !cardManagement.isSelectionModeEnabled && !favoriteBooks.isEmpty {
                         CatalogCollapsibleCardSection(
                             title: String(localized: "bell.catalog.favorites"),
                             layoutMode: layoutMode.wrappedValue,
@@ -311,7 +347,8 @@ struct LibraryView: View {
                                 bookCard(
                                     book,
                                     cardSize: favoriteCardSize,
-                                    cardMetrics: favoriteCardMetrics
+                                    cardMetrics: favoriteCardMetrics,
+                                    allowsManagementActions: false
                                 )
                             }
                         }
@@ -347,7 +384,8 @@ struct LibraryView: View {
             }
             .background(libraryBackground)
             .overlay(alignment: .trailing) {
-                if (selectedOrder == .author || selectedOrder == .title),
+                if !cardManagement.isSelectionModeEnabled,
+                   (selectedOrder == .author || selectedOrder == .title),
                    case .grouped(let sections) = displayModel.layout {
                     LibraryAlphabetIndex(sections: sections) { sectionID in
                         withAnimation(.snappy(duration: 0.2)) {
@@ -465,11 +503,20 @@ struct LibraryView: View {
     private func bookCard(
         _ book: BookRecord,
         cardSize: CGSize,
-        cardMetrics: CatalogCardLayoutMode.CardMetrics
+        cardMetrics: CatalogCardLayoutMode.CardMetrics,
+        allowsManagementActions: Bool = true
     ) -> some View {
-        Button {
-            onBookSelected?(book.id)
-        } label: {
+        CatalogInteractiveCard(
+            item: book,
+            state: $cardManagement,
+            cardSize: cardSize,
+            canManage: canEditLibrary && allowsManagementActions,
+            onOpen: { book in
+                onBookSelected?(book.id)
+            },
+            selectTitle: String(localized: "bell.context.select"),
+            moveTitle: String(localized: "bell.context.move")
+        ) {
             BookCardView(
                 book: book,
                 style: CatalogCardContentStyle.style(for: layoutMode.wrappedValue),
@@ -477,9 +524,59 @@ struct LibraryView: View {
                 cardMetrics: cardMetrics
             )
         }
-        .buttonStyle(.plain)
-        .frame(width: cardSize.width, height: cardSize.height)
-        .contentShape(Rectangle())
+    }
+
+    private var visibleBooks: [BookRecord] {
+        let candidates: [BookRecord]
+
+        switch displayModel.layout {
+        case .empty:
+            candidates = []
+        case .flat(let books):
+            candidates = books
+        case .grouped(let sections):
+            candidates = sections.flatMap { section in
+                section.books + section.subgroups.flatMap(\.books)
+            }
+        }
+
+        var seen: Set<UUID> = []
+        return candidates.filter { seen.insert($0.id).inserted }
+    }
+
+    private func moveBooks(_ books: [BookRecord], to locationID: UUID?) {
+        guard canEditLibrary else { return }
+
+        let location = storageContext.location(for: locationID)
+        let storagePath = location.map(storageContext.storagePath(for:))
+
+        for book in books {
+            var updatedItem = book.item
+            updatedItem.setStorageLocation(location, path: storagePath)
+            (repository as! any BookCatalogRepository).saveBookRecord(
+                BookRecord(item: updatedItem, details: book.details)
+            )
+        }
+    }
+
+    private func batchEditBooks(_ books: [BookRecord], edit: ItemBatchEdit) {
+        guard canEditLibrary else { return }
+
+        let updatedBooks = books.map { book in
+            BookRecord(
+                item: edit.applying(to: book.item),
+                details: book.details
+            )
+        }
+        (repository as! any BookCatalogRepository).saveBookRecords(updatedBooks)
+    }
+
+    private func deleteBooks(_ books: [BookRecord]) {
+        guard canEditLibrary else { return }
+
+        for book in books {
+            (repository as! any BookCatalogRepository).deleteBookRecord(bookID: book.id)
+        }
     }
 
     private func stripScreenWidth(
@@ -500,27 +597,30 @@ struct LibraryView: View {
         .ignoresSafeArea()
     }
 
+    @ToolbarContentBuilder
     private var libraryToolbar: some ToolbarContent {
-        CatalogCollectionToolbar(
-            selectedSort: selectedOrderBinding,
-            selectedLayoutMode: layoutMode,
-            isPresentingAddOptions: $isPresentingAddBookOptions,
-            sortOptions: LibraryOrderMode.allCases,
-            sortSectionTitle: String(localized: "common.sort"),
-            sortTitle: { $0.title },
-            canEdit: canEditLibrary,
-            onEdit: {
-                isPresentingEditLibrary = true
-            },
-            onPhotoLibrary: {
-                guard canEditLibrary else { return }
-                isPresentingPhotoPicker = true
-            },
-            onCamera: {
-                guard canEditLibrary else { return }
-                isPresentingCamera = true
-            }
-        )
+        if !cardManagement.isSelectionModeEnabled {
+            CatalogCollectionToolbar(
+                selectedSort: selectedOrderBinding,
+                selectedLayoutMode: layoutMode,
+                isPresentingAddOptions: $isPresentingAddBookOptions,
+                sortOptions: LibraryOrderMode.allCases,
+                sortSectionTitle: String(localized: "common.sort"),
+                sortTitle: { $0.title },
+                canEdit: canEditLibrary,
+                onEdit: {
+                    isPresentingEditLibrary = true
+                },
+                onPhotoLibrary: {
+                    guard canEditLibrary else { return }
+                    isPresentingPhotoPicker = true
+                },
+                onCamera: {
+                    guard canEditLibrary else { return }
+                    isPresentingCamera = true
+                }
+            )
+        }
     }
 
     private var editLibrarySheet: some View {
@@ -552,6 +652,7 @@ struct LibraryView: View {
             books: sourceBooks,
             series: series
         )
+        cardManagement.pruneSelection(to: visibleBooks)
     }
 
     private func clearDraftBook() {

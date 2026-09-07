@@ -110,7 +110,7 @@ struct BookSearchView: View {
                 tokens: uniquePublicationYears.map(BookSearchToken.publicationYear)
             ),
             SearchTokenGroup(
-                title: String(localized: "book.field.acquired_year"),
+                title: String(localized: "item.detail.acquisition_year"),
                 systemImage: "calendar.badge.plus",
                 tokens: uniqueAcquiredYears.map(BookSearchToken.acquiredYear)
             ),

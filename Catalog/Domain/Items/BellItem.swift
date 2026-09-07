@@ -9,6 +9,30 @@ struct BellDetails: Identifiable, Hashable, Codable {
     var id: UUID { itemID }
 }
 
+/// Describes bell-specific fields that should be changed for a group of bells.
+struct BellBatchEdit {
+    var material: BellMaterial?
+    var customMaterialName: String = ""
+
+    var isEmpty: Bool {
+        material == nil
+    }
+
+    func applying(to details: BellDetails) -> BellDetails {
+        guard let material else { return details }
+
+        var updated = details
+        updated.material = material
+        if material == .other {
+            let trimmed = customMaterialName.trimmingCharacters(in: .whitespacesAndNewlines)
+            updated.customMaterialName = trimmed.isEmpty ? nil : trimmed
+        } else {
+            updated.customMaterialName = nil
+        }
+        return updated
+    }
+}
+
 /// Groups bell material values and behavior.
 enum BellMaterial: String, CaseIterable, Hashable, Identifiable, Codable {
     case unknown

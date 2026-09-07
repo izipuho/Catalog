@@ -30,6 +30,39 @@ enum BookContributorRole: String, CaseIterable, Hashable, Identifiable, Codable 
     }
 }
 
+/// Describes a forced replacement or clear for one contributor role in a batch edit.
+struct BookContributorBatchEdit: Hashable {
+    var role: BookContributorRole
+    var person: Person?
+
+    func applying(to contributors: [BookContributor]) -> [BookContributor] {
+        let ordered = contributors.sorted { lhs, rhs in
+            if lhs.order != rhs.order { return lhs.order < rhs.order }
+            return lhs.person.sortName.localizedCaseInsensitiveCompare(rhs.person.sortName) == .orderedAscending
+        }
+        let existingRoleIndex = ordered.firstIndex { $0.role == role }
+        var result = ordered.filter { $0.role != role }
+
+        if let person {
+            let insertionIndex = min(existingRoleIndex ?? result.count, result.count)
+            result.insert(
+                BookContributor(
+                    role: role,
+                    order: insertionIndex,
+                    person: person
+                ),
+                at: insertionIndex
+            )
+        }
+
+        return result.enumerated().map { index, contributor in
+            var updated = contributor
+            updated.order = index
+            return updated
+        }
+    }
+}
+
 /// Represents a typed external or catalog identifier assigned to a book.
 struct BookIdentifier: Hashable, Codable, Sendable {
     var type: BookIdentifierType
@@ -64,6 +97,61 @@ struct BookDetails: Identifiable, Hashable, Codable {
     var identifiers: [BookIdentifier] = []
 
     var id: UUID { itemID }
+}
+
+/// Describes book-specific fields that should be changed for a group of books.
+struct BookBatchEdit {
+    var languageCode: BatchEditValue<String> = .unchanged
+    var genre: BatchEditValue<String> = .unchanged
+    var pageCount: BatchEditValue<Int> = .unchanged
+    var publicationYear: BatchEditValue<Int> = .unchanged
+    var contributors: [BookContributorBatchEdit] = []
+    var series: BatchEditValue<BookSeries> = .unchanged
+    var publisher: BatchEditValue<Publisher> = .unchanged
+
+    var isEmpty: Bool {
+        languageCode.isUnchanged
+            && genre.isUnchanged
+            && pageCount.isUnchanged
+            && publicationYear.isUnchanged
+            && contributors.isEmpty
+            && series.isUnchanged
+            && publisher.isUnchanged
+    }
+
+    func applying(to details: BookDetails) -> BookDetails {
+        var updated = details
+
+        if case .set(let value) = languageCode {
+            updated.languageCode = normalized(value)?.lowercased()
+        }
+        if case .set(let value) = genre {
+            updated.genre = normalized(value)
+        }
+        if case .set(let value) = pageCount {
+            updated.pageCount = value
+        }
+        if case .set(let value) = publicationYear {
+            updated.publicationYear = value
+        }
+        for contributorEdit in contributors {
+            updated.contributors = contributorEdit.applying(to: updated.contributors)
+        }
+        if case .set(let value) = series {
+            updated.series = value
+        }
+        if case .set(let value) = publisher {
+            updated.publisher = value
+        }
+
+        return updated
+    }
+
+    private func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }
 
 /// Represents a complete book catalog record.
