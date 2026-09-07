@@ -76,9 +76,6 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
         guard let entity = fetchBookEntity(by: bookID) else { return }
         guard let item = entity.value(forKey: "item") as? NSManagedObject else { return }
 
-        if let coverImage = entity.value(forKey: "coverImage") as? NSManagedObject {
-            context.delete(coverImage)
-        }
         context.delete(item)
         deleteOrphanItemTags()
         saveContext()
