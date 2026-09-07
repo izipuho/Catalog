@@ -1,11 +1,21 @@
 import CoreGraphics
 import CoreImage
 import Foundation
+import UIKit
 import Vision
 
 /// Extracts and perspective-corrects a book cover from a source image.
 struct BookCoverExtractor: Sendable {
-    func extractCover(from image: CGImage) async -> CGImage? {
+    func extractCover(from image: UIImage) async -> UIImage? {
+        guard let sourceImage = normalizedCGImage(from: image),
+              let coverImage = extractCover(from: sourceImage) else {
+            return nil
+        }
+
+        return UIImage(cgImage: coverImage)
+    }
+
+    private func extractCover(from image: CGImage) -> CGImage? {
         let request = VNDetectRectanglesRequest()
         request.maximumObservations = 8
         request.minimumConfidence = 0.5
@@ -25,6 +35,25 @@ struct BookCoverExtractor: Sendable {
         }
 
         return perspectiveCorrectedImage(image, using: rectangle)
+    }
+
+    private func normalizedCGImage(from image: UIImage) -> CGImage? {
+        guard image.imageOrientation != .up else {
+            return image.cgImage
+        }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.opaque = false
+
+        let normalizedImage = UIGraphicsImageRenderer(
+            size: image.size,
+            format: format
+        ).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+
+        return normalizedImage.cgImage
     }
 
     private func bestRectangle(in observations: [VNRectangleObservation]) -> VNRectangleObservation? {
