@@ -26,6 +26,9 @@ struct BookEditorView: View {
     @State private var tagInput = ""
     @State private var tags: [String]
     @State private var mediaAssets: [MediaAsset]
+    @State private var coverImage: MediaAsset?
+    @State private var coverSourcePhotoID: UUID?
+    @State private var isGeneratingCoverImage = false
 
     @State private var languageCode: String
     @State private var genre: String
@@ -51,6 +54,7 @@ struct BookEditorView: View {
     @State private var authorBaseNames: [Int: String] = [:]
 
     private let editorItemID: UUID
+    private let coverExtractor = BookCoverExtractor()
     private let acquiredYearOptions = [String(localized: "common.none")]
         + Array(1900...Calendar.current.component(.year, from: .now)).reversed().map(String.init)
 
@@ -128,12 +132,15 @@ struct BookEditorView: View {
         photoAnalysis.isAnalyzing || photoAnalysis.suggestions.hasSuggestions
     }
 
-    private var firstPhotoAssetID: UUID? {
+    private var firstPhotoAsset: MediaAsset? {
         mediaAssets
             .filter { $0.kind == .photo }
             .sorted { $0.sortOrder < $1.sortOrder }
-            .first?
-            .id
+            .first
+    }
+
+    private var firstPhotoAssetID: UUID? {
+        firstPhotoAsset?.id
     }
 
     private var textAssignments: [BookTextTarget: [TextFragment]] {
@@ -164,6 +171,13 @@ struct BookEditorView: View {
         self.onSave = onSave
         self.editorItemID = book?.id ?? UUID()
 
+        let initialMedia = book?.mediaAssets ?? initialMediaAssets
+        let initialFirstPhotoID = initialMedia
+            .filter { $0.kind == .photo }
+            .sorted { $0.sortOrder < $1.sortOrder }
+            .first?
+            .id
+
         _title = State(initialValue: book?.title ?? "")
         _subtitle = State(initialValue: book?.details.subtitle ?? "")
         _notes = State(initialValue: book?.notes ?? "")
@@ -173,7 +187,11 @@ struct BookEditorView: View {
         _condition = State(initialValue: book?.condition ?? .good)
         _acquisitionMethod = State(initialValue: book?.acquisitionMethod ?? .bought)
         _tags = State(initialValue: book?.tags ?? [])
-        _mediaAssets = State(initialValue: book?.mediaAssets ?? initialMediaAssets)
+        _mediaAssets = State(initialValue: initialMedia)
+        _coverImage = State(initialValue: book?.details.coverImage)
+        _coverSourcePhotoID = State(
+            initialValue: book?.details.coverImage == nil ? nil : initialFirstPhotoID
+        )
         _languageCode = State(initialValue: book?.details.languageCode ?? "")
         _genre = State(initialValue: book?.details.genre ?? "")
         _pageCount = State(initialValue: book?.details.pageCount.map(String.init) ?? "")
@@ -617,6 +635,9 @@ struct BookEditorView: View {
                 loadCatalogMetadata()
                 startInitialPhotoAnalysisIfNeeded()
             }
+            .task(id: firstPhotoAssetID) {
+                await updateCoverImageIfNeeded()
+            }
             .onChange(of: photoAnalysis.recognizedText) { _, recognizedText in
                 syncTextFragments(from: recognizedText)
             }
@@ -712,6 +733,7 @@ struct BookEditorView: View {
         isTitleValid
             && isOptionalPositiveIntegerValid(pageCount)
             && isVolumeValid
+            && !isGeneratingCoverImage
     }
 
     private var isTitleValid: Bool {
@@ -802,6 +824,40 @@ struct BookEditorView: View {
         guard !trimmed.isEmpty else { return true }
         guard let number = Int(trimmed) else { return false }
         return number > 0
+    }
+
+    @MainActor
+    private func updateCoverImageIfNeeded() async {
+        guard let sourceAsset = firstPhotoAsset else {
+            coverImage = nil
+            coverSourcePhotoID = nil
+            isGeneratingCoverImage = false
+            return
+        }
+
+        guard coverImage == nil || coverSourcePhotoID != sourceAsset.id else {
+            return
+        }
+
+        guard let sourceData = sourceAsset.originalData,
+              let sourceImage = UIImage(data: sourceData) else {
+            coverImage = nil
+            coverSourcePhotoID = sourceAsset.id
+            isGeneratingCoverImage = false
+            return
+        }
+
+        let sourceID = sourceAsset.id
+        isGeneratingCoverImage = true
+        let extractedCover = await coverExtractor.extractCover(from: sourceImage)
+
+        guard !Task.isCancelled, firstPhotoAssetID == sourceID else {
+            return
+        }
+
+        coverImage = extractedCover
+        coverSourcePhotoID = sourceID
+        isGeneratingCoverImage = false
     }
 
     private func startInitialPhotoAnalysisIfNeeded() {
@@ -1373,6 +1429,7 @@ struct BookEditorView: View {
                 pageCount: optionalPositiveInt(pageCount),
                 publicationYear: Int(selectedPublicationYearOption),
                 volumeNumber: selectedSeries == nil ? nil : optionalPositiveInt(volumeNumber),
+                coverImage: coverImage,
                 publisher: selectedPublisher,
                 contributors: normalizedContributors,
                 series: selectedSeries,
