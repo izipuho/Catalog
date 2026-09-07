@@ -76,6 +76,9 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
         guard let entity = fetchBookEntity(by: bookID) else { return }
         guard let item = entity.value(forKey: "item") as? NSManagedObject else { return }
 
+        if let coverImage = entity.value(forKey: "coverImage") as? NSManagedObject {
+            context.delete(coverImage)
+        }
         context.delete(item)
         deleteOrphanItemTags()
         saveContext()
@@ -87,12 +90,13 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
         let entity = fetchBookEntity(by: book.id) ?? makeEntity(named: "BookEntity")
 
         apply(book, to: entity)
+        entity.setValue(item, forKey: "item")
+        fillInverseRelationship(from: entity, relationshipName: "item", with: item)
+        replaceBookCoverImage(book.details.coverImage, for: entity)
         entity.setValue(book.details.publisher.map(upsertPublisher), forKey: "publisher")
         entity.setValue(book.details.series.map { upsertBookSeries($0, for: item) }, forKey: "series")
         replaceContributors(book.details.contributors, for: entity)
         replaceBookIdentifiers(book.details.identifiers, for: entity)
-        entity.setValue(item, forKey: "item")
-        fillInverseRelationship(from: entity, relationshipName: "item", with: item)
     }
 
     private func apply(_ book: BookRecord, to entity: NSManagedObject) {
@@ -185,6 +189,41 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
         applyReferenceMediaAsset(logo.with(sortOrder: 0), to: logoEntity)
         logoEntity.setValue(publisher, forKey: "publisher")
         publisher.setValue(logoEntity, forKey: "logo")
+    }
+
+    private func replaceBookCoverImage(_ coverImage: MediaAsset?, for book: NSManagedObject) {
+        let existingCoverImage = book.value(forKey: "coverImage") as? NSManagedObject
+
+        guard let coverImage else {
+            book.setValue(nil, forKey: "coverImage")
+            if let existingCoverImage {
+                context.delete(existingCoverImage)
+            }
+            return
+        }
+
+        let coverImageEntity: NSManagedObject
+        if let existingCoverImage,
+           existingCoverImage.value(forKey: "id") as? UUID == coverImage.id {
+            coverImageEntity = existingCoverImage
+        } else {
+            if let existingCoverImage {
+                context.delete(existingCoverImage)
+            }
+            coverImageEntity = makeEntity(named: "MediaAssetEntity")
+            if coverImageEntity.objectID.persistentStore == nil,
+               let item = book.value(forKey: "item") as? NSManagedObject,
+               let collection = item.value(forKey: "collection") as? NSManagedObject,
+               let store = book.objectID.persistentStore
+                    ?? item.objectID.persistentStore
+                    ?? collection.objectID.persistentStore {
+                context.assign(coverImageEntity, to: store)
+            }
+        }
+
+        applyReferenceMediaAsset(coverImage.with(sortOrder: 0), to: coverImageEntity)
+        coverImageEntity.setValue(book, forKey: "book")
+        book.setValue(coverImageEntity, forKey: "coverImage")
     }
 
     private func replaceContributors(_ contributors: [BookContributor], for book: NSManagedObject) {
