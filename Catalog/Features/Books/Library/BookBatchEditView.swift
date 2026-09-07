@@ -98,28 +98,6 @@ struct BookBatchEditView: View {
                 onSave(itemEdit, bookEdit)
             }
         ) {
-            BookContributorsEditorSubview(
-                rowCount: contributorEdits.count,
-                onDelete: deleteContributorEdits
-            ) { index in
-                let edit = contributorEdits[index]
-                BookContributorEditorRow(
-                    role: edit.role,
-                    person: edit.person
-                ) {
-                    editingContributorIndex = index
-                    isPresentingContributorEditor = true
-                }
-            } addContent: {
-                Button {
-                    editingContributorIndex = nil
-                    isPresentingContributorEditor = true
-                } label: {
-                    Label("book_contributor.action.add", systemImage: "plus")
-                }
-                .disabled(contributorEdits.count >= BookContributorRole.allCases.count)
-            }
-
             Section(String(localized: "common.book")) {
                 HStack(spacing: 8) {
                     Picker(String(localized: "series.title"), selection: seriesBinding) {
@@ -194,6 +172,29 @@ struct BookBatchEditView: View {
                     }
                 }
             }
+            
+            BookContributorsEditorSubview(
+                rowCount: contributorEdits.count,
+                onDelete: deleteContributorEdits
+            ) { index in
+                let edit = contributorEdits[index]
+                BookContributorEditorRow(
+                    role: edit.role,
+                    person: edit.person
+                ) {
+                    editingContributorIndex = index
+                    isPresentingContributorEditor = true
+                }
+            } addContent: {
+                Button {
+                    editingContributorIndex = nil
+                    isPresentingContributorEditor = true
+                } label: {
+                    Label("book_contributor.action.add", systemImage: "plus")
+                }
+                .disabled(contributorEdits.count >= BookContributorRole.allCases.count)
+            }
+
         }
         .sheet(isPresented: $isPresentingContributorEditor) {
             BookContributorEditorView(
