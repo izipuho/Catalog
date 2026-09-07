@@ -77,10 +77,11 @@ struct BookCardView: View {
     }
 
     private var coverPhoto: MediaAsset? {
-        book.mediaAssets
-            .filter { $0.kind == .photo }
-            .sorted { $0.sortOrder < $1.sortOrder }
-            .first
+        book.details.coverImage
+            ?? book.mediaAssets
+                .filter { $0.kind == .photo }
+                .sorted { $0.sortOrder < $1.sortOrder }
+                .first
     }
 
     private var authorNames: String {
