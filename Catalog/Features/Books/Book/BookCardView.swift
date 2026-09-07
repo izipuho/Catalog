@@ -33,7 +33,7 @@ struct BookCardView: View {
                 mediaContent
                     .catalogSurfaceCard(cardMetrics: cardMetrics) {
                         MediaPreviewImage(
-                            identifier: coverPhoto.localIdentifier,
+                            identifier: coverPhoto.localIdentifier.isEmpty ? nil : coverPhoto.localIdentifier,
                             originalData: coverPhoto.originalData,
                             size: cardSize
                         )
