@@ -1,18 +1,37 @@
 import CoreGraphics
 import CoreImage
+import CryptoKit
 import Foundation
 import UIKit
 import Vision
 
 /// Extracts and perspective-corrects a book cover from a source image.
 struct BookCoverExtractor: Sendable {
-    func extractCover(from image: UIImage) async -> UIImage? {
+    func extractCover(from image: UIImage) async -> MediaAsset? {
         guard let sourceImage = normalizedCGImage(from: image),
               let coverImage = extractCover(from: sourceImage) else {
             return nil
         }
 
-        return UIImage(cgImage: coverImage)
+        let normalizedCover = UIImage(cgImage: coverImage)
+        guard let data = normalizedCover.jpegData(compressionQuality: 0.92) else {
+            return nil
+        }
+
+        return MediaAsset(
+            id: UUID(),
+            kind: .photo,
+            localIdentifier: "",
+            displayName: nil,
+            sortOrder: 0,
+            fileName: nil,
+            mimeType: "image/jpeg",
+            byteSize: data.count,
+            checksum: checksum(for: data),
+            width: coverImage.width,
+            height: coverImage.height,
+            originalData: data
+        )
     }
 
     private func extractCover(from image: CGImage) -> CGImage? {
@@ -101,5 +120,9 @@ struct BookCoverExtractor: Sendable {
             x: point.x * imageSize.width,
             y: point.y * imageSize.height
         )
+    }
+
+    private func checksum(for data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }
