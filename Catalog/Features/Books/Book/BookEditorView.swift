@@ -27,8 +27,8 @@ struct BookEditorView: View {
     @State private var tags: [String]
     @State private var mediaAssets: [MediaAsset]
     @State private var coverImage: MediaAsset?
-    @State private var coverSourcePhotoID: UUID?
     @State private var isGeneratingCoverImage = false
+    @State private var isPresentingCoverCaptureFailure = false
 
     @State private var languageCode: String
     @State private var genre: String
@@ -143,6 +143,26 @@ struct BookEditorView: View {
         firstPhotoAsset?.id
     }
 
+    private var editorMediaAssets: Binding<[MediaAsset]> {
+        Binding(
+            get: {
+                guard let coverImage else { return mediaAssets }
+                return [coverImage] + mediaAssets
+            },
+            set: { updatedAssets in
+                guard let coverImage else {
+                    mediaAssets = updatedAssets
+                    return
+                }
+
+                if !updatedAssets.contains(where: { $0.id == coverImage.id }) {
+                    self.coverImage = nil
+                }
+                mediaAssets = updatedAssets.filter { $0.id != coverImage.id }
+            }
+        )
+    }
+
     private var textAssignments: [BookTextTarget: [TextFragment]] {
         textFragmentState.assignments
     }
@@ -172,11 +192,6 @@ struct BookEditorView: View {
         self.editorItemID = book?.id ?? UUID()
 
         let initialMedia = book?.mediaAssets ?? initialMediaAssets
-        let initialFirstPhotoID = initialMedia
-            .filter { $0.kind == .photo }
-            .sorted { $0.sortOrder < $1.sortOrder }
-            .first?
-            .id
 
         _title = State(initialValue: book?.title ?? "")
         _subtitle = State(initialValue: book?.details.subtitle ?? "")
@@ -188,9 +203,10 @@ struct BookEditorView: View {
         _acquisitionMethod = State(initialValue: book?.acquisitionMethod ?? .bought)
         _tags = State(initialValue: book?.tags ?? [])
         _mediaAssets = State(initialValue: initialMedia)
-        _coverImage = State(initialValue: book?.details.coverImage)
-        _coverSourcePhotoID = State(
-            initialValue: book?.details.coverImage == nil ? nil : initialFirstPhotoID
+        _coverImage = State(
+            initialValue: book?.details.coverImage?.with(
+                displayName: String(localized: "editor.media.cover")
+            )
         )
         _languageCode = State(initialValue: book?.details.languageCode ?? "")
         _genre = State(initialValue: book?.details.genre ?? "")
@@ -216,8 +232,9 @@ struct BookEditorView: View {
                 Section(String(localized: "editor.docs_and_media")) {
                     MediaSection(
                         itemID: editorItemID,
-                        mediaAssets: $mediaAssets,
-                        analysisHighlightedAssetID: photoAnalysis.isAnalyzing ? firstPhotoAssetID : nil
+                        mediaAssets: editorMediaAssets,
+                        analysisHighlightedAssetID: photoAnalysis.isAnalyzing ? firstPhotoAssetID : nil,
+                        onPhotoAdded: handlePhotoAdded
                     )
                     .safeAreaPadding(.horizontal, CatalogMetrics.Insets.screen)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -631,12 +648,15 @@ struct BookEditorView: View {
             } message: {
                 Text(String(localized: "book.delete.message"))
             }
+            .alert(String(localized: "editor.media.cover"), isPresented: $isPresentingCoverCaptureFailure) {
+                Button(String(localized: "common.ok"), role: .cancel) {}
+            } message: {
+                Text("Couldn’t detect the full book cover. Retake the photo with all four cover edges clearly visible.")
+            }
             .task(id: collection.id) {
                 loadCatalogMetadata()
                 startInitialPhotoAnalysisIfNeeded()
-            }
-            .task(id: firstPhotoAssetID) {
-                await updateCoverImageIfNeeded()
+                consumeInitialCoverPhotoIfNeeded()
             }
             .onChange(of: photoAnalysis.recognizedText) { _, recognizedText in
                 syncTextFragments(from: recognizedText)
@@ -827,37 +847,55 @@ struct BookEditorView: View {
     }
 
     @MainActor
-    private func updateCoverImageIfNeeded() async {
-        guard let sourceAsset = firstPhotoAsset else {
-            coverImage = nil
-            coverSourcePhotoID = nil
-            isGeneratingCoverImage = false
+    private func handlePhotoAdded(_ image: UIImage) {
+        guard coverImage == nil, !isGeneratingCoverImage else { return }
+        guard let sourceAsset = mediaAssets
+            .filter({ $0.kind == .photo })
+            .max(by: { $0.sortOrder < $1.sortOrder }) else {
             return
         }
 
-        guard coverImage == nil || coverSourcePhotoID != sourceAsset.id else {
+        consumePhotoAsCover(image, sourceAsset: sourceAsset)
+    }
+
+    @MainActor
+    private func consumeInitialCoverPhotoIfNeeded() {
+        guard existingBook == nil,
+              coverImage == nil,
+              !isGeneratingCoverImage,
+              let sourceAsset = firstPhotoAsset,
+              let sourceData = sourceAsset.originalData,
+              let image = UIImage(data: sourceData) else {
             return
         }
 
-        guard let sourceData = sourceAsset.originalData,
-              let sourceImage = UIImage(data: sourceData) else {
-            coverImage = nil
-            coverSourcePhotoID = sourceAsset.id
-            isGeneratingCoverImage = false
-            return
-        }
+        consumePhotoAsCover(image, sourceAsset: sourceAsset)
+    }
 
-        let sourceID = sourceAsset.id
+    @MainActor
+    private func consumePhotoAsCover(_ image: UIImage, sourceAsset: MediaAsset) {
+        mediaAssets = mediaAssets
+            .filter { $0.id != sourceAsset.id }
+            .enumerated()
+            .map { index, asset in
+                asset.with(sortOrder: index)
+            }
+        LocalMediaFileStore.shared.deleteFile(for: sourceAsset.localIdentifier)
+
         isGeneratingCoverImage = true
-        let extractedCover = await coverExtractor.extractCover(from: sourceImage)
+        Task { @MainActor in
+            let extractedCover = await coverExtractor.extractCover(from: image)
+            isGeneratingCoverImage = false
 
-        guard !Task.isCancelled, firstPhotoAssetID == sourceID else {
-            return
+            guard let extractedCover else {
+                isPresentingCoverCaptureFailure = true
+                return
+            }
+
+            coverImage = extractedCover.with(
+                displayName: String(localized: "editor.media.cover")
+            )
         }
-
-        coverImage = extractedCover
-        coverSourcePhotoID = sourceID
-        isGeneratingCoverImage = false
     }
 
     private func startInitialPhotoAnalysisIfNeeded() {
