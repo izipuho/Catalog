@@ -91,6 +91,7 @@ struct BookDetails: Identifiable, Hashable, Codable {
     var pageCount: Int?
     var publicationYear: Int?
     var volumeNumber: Int?
+    var coverImage: MediaAsset? = nil
     var publisher: Publisher? = nil
     var contributors: [BookContributor]
     var series: BookSeries? = nil

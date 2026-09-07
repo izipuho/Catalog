@@ -10,6 +10,7 @@ extension CoreDataDomainMapper {
         }
 
         let itemRecord = itemRecord(from: itemEntity)
+        let coverImageEntity = entity.value(forKey: "coverImage") as? NSManagedObject
         let publisherEntity = entity.value(forKey: "publisher") as? NSManagedObject
         let seriesEntity = entity.value(forKey: "series") as? NSManagedObject
         let contributors = relatedObjects(entity, "contributors")
@@ -34,6 +35,7 @@ extension CoreDataDomainMapper {
                 pageCount: positiveIntValue(entity, "pageCount"),
                 publicationYear: optionalIntValue(entity, "publicationYear"),
                 volumeNumber: positiveIntValue(entity, "volumeNumber"),
+                coverImage: coverImageEntity.map { mediaAsset(from: $0) },
                 publisher: publisherEntity.map { publisher(from: $0) },
                 contributors: contributors,
                 series: seriesEntity.map { bookSeries(from: $0) },
