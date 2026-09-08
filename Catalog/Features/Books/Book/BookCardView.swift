@@ -34,15 +34,27 @@ struct BookCardView: View {
                 size: cardSize
             )
 
-            if usesWideComposition {
-                wideContent
-            } else {
-                coverContent
-            }
+            layoutContent
         }
         .frame(width: cardSize.width, height: cardSize.height)
         .clipShape(cardShape)
         .glassEffect(.regular.interactive(), in: cardShape)
+    }
+
+    @ViewBuilder
+    private var layoutContent: some View {
+        switch cardMetrics.layoutMode {
+        case .covers:
+            coverContent
+        case .mini:
+            coverContent
+        case .compact:
+            coverContent
+        case .wide:
+            wideContent
+        case .showcase:
+            coverContent
+        }
     }
 
     private var coverContent: some View {
@@ -110,10 +122,6 @@ struct BookCardView: View {
 
     private var cardShape: RoundedRectangle {
         CatalogShapes.card(cornerRadius: cardMetrics.cornerRadius)
-    }
-
-    private var usesWideComposition: Bool {
-        cardSize.width >= cardSize.height * 1.45
     }
 
     private var coverInset: CGFloat {
