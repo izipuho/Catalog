@@ -15,6 +15,7 @@ func BookContributorsEditorSubview<RowContent: View, AddContent: View>(
 }
 
 @ViewBuilder
+@MainActor
 func BookContributorEditorRow(
     role: BookContributorRole,
     person: Person?,
