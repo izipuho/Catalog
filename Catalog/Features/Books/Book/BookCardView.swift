@@ -84,14 +84,11 @@ struct BookCardView: View {
                         .foregroundStyle(CatalogMediaContrast.onMediaPrimary)
                         .lineLimit(titleStyle.titleLineLimit)
 
-                    if titleStyle.showsSubtitle {
-                        let authors = book.authorNames.joined(separator: ", ")
-                        if !authors.isEmpty {
-                            Text(authors)
-                                .font(titleStyle.subtitleFont)
-                                .foregroundStyle(CatalogMediaContrast.onMediaSecondary)
-                                .lineLimit(titleStyle.subtitleLineLimit)
-                        }
+                    if titleStyle.showsSubtitle, !authorNames.isEmpty {
+                        Text(authorNames)
+                            .font(titleStyle.subtitleFont)
+                            .foregroundStyle(CatalogMediaContrast.onMediaSecondary)
+                            .lineLimit(titleStyle.subtitleLineLimit)
                     }
                 }
 
@@ -143,6 +140,10 @@ struct BookCardView: View {
             width: cardSize.width * 0.38,
             height: max(cardSize.height - (wideInset * 2), 0)
         )
+    }
+
+    private var authorNames: String {
+        book.authorNames.joined(separator: ", ")
     }
 }
 
