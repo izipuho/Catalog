@@ -28,30 +28,14 @@ struct BookCardView: View {
     }
 
     var body: some View {
-        Group {
-            if let coverPhoto {
-                mediaContent
-                    .catalogSurfaceCard(cardMetrics: cardMetrics) {
-                        MediaPreviewImage(
-                            identifier: coverPhoto.localIdentifier.isEmpty ? nil : coverPhoto.localIdentifier,
-                            originalData: coverPhoto.originalData,
-                            size: cardSize
-                        )
-                    }
-            } else {
-                CatalogCardContent(
-                    title: book.title,
-                    subtitle: authorNames,
-                    accessories: accessories,
-                    style: style,
-                    bright: false,
-                    cardSize: cardSize,
-                    cardMetrics: cardMetrics
+        mediaContent
+            .catalogSurfaceCard(cardMetrics: cardMetrics) {
+                BookCoverView(
+                    cover: book.cover,
+                    size: cardSize
                 )
-                .catalogSurfaceCard(cardMetrics: cardMetrics)
             }
-        }
-        .frame(width: cardSize.width, height: cardSize.height)
+            .frame(width: cardSize.width, height: cardSize.height)
     }
 
     @ViewBuilder
@@ -74,22 +58,6 @@ struct BookCardView: View {
                     height: max(cardSize.height - (cardMetrics.cardPadding * 2), 0)
                 )
         }
-    }
-
-    private var coverPhoto: MediaAsset? {
-        book.details.coverImage
-            ?? book.mediaAssets
-                .filter { $0.kind == .photo }
-                .sorted { $0.sortOrder < $1.sortOrder }
-                .first
-    }
-
-    private var authorNames: String {
-        book.details.contributors
-            .filter { $0.role == .author }
-            .sorted { $0.order < $1.order }
-            .map(\.person.displayName)
-            .joined(separator: ", ")
     }
 }
 
