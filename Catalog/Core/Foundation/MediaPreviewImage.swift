@@ -6,17 +6,30 @@ struct MediaPreviewImage: View {
     let identifier: String?
     let originalData: Data?
     let size: CGSize
+    let contentMode: ContentMode
     private let mediaStore = LocalMediaFileStore.shared
     private let thumbnailCache = ThumbnailImageCache.shared
     @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
+
+    init(
+        identifier: String?,
+        originalData: Data?,
+        size: CGSize,
+        contentMode: ContentMode = .fill
+    ) {
+        self.identifier = identifier
+        self.originalData = originalData
+        self.size = size
+        self.contentMode = contentMode
+    }
 
     var body: some View {
         Group {
             if let image {
                 Image(uiImage: image)
                     .resizable()
-                    .scaledToFill()
+                    .aspectRatio(contentMode: contentMode)
                     .frame(width: size.width, height: size.height)
                     .clipped()
             } else {

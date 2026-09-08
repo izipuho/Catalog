@@ -49,7 +49,7 @@ struct BookDetailView: View {
     }
 
     var body: some View {
-        MediaQuickLookPresenter(mediaAssets: book.mediaAssets) { preview in
+        MediaQuickLookPresenter(mediaAssets: detailPreviewAssets) { preview in
             ScrollView {
                 VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.lg) {
                     header(preview: preview)
@@ -232,29 +232,19 @@ struct BookDetailView: View {
         .padding(.horizontal, CatalogMetrics.Insets.screen)
     }
 
-    @ViewBuilder
     private func cover(preview: @escaping (MediaAsset) -> Void) -> some View {
-        if let coverPhoto {
-            MediaPreviewImage(
-                identifier: coverPhoto.localIdentifier.isEmpty ? nil : coverPhoto.localIdentifier,
-                originalData: coverPhoto.originalData,
-                size: CGSize(width: 112, height: 158)
-            )
-            .frame(width: 112, height: 158)
-            .clipShape(RoundedRectangle(cornerRadius: CatalogMetrics.CornerRadius.thumbnail, style: .continuous))
-            .contentShape(Rectangle())
-            .onTapGesture {
-                preview(coverPhoto)
-            }
-        } else {
-            RoundedRectangle(cornerRadius: CatalogMetrics.CornerRadius.thumbnail, style: .continuous)
-                .fill(.secondary.opacity(0.12))
-                .frame(width: 112, height: 158)
-                .overlay {
-                    Image(systemName: "book.closed")
-                        .font(.system(size: 36))
-                        .foregroundStyle(.secondary)
-                }
+        let cover = book.cover
+
+        return BookCoverView(
+            cover: cover,
+            size: CGSize(width: 112, height: 158)
+        )
+        .frame(width: 112, height: 158)
+        .clipShape(RoundedRectangle(cornerRadius: CatalogMetrics.CornerRadius.thumbnail, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard let mediaAsset = cover.mediaAsset else { return }
+            preview(mediaAsset)
         }
     }
 
@@ -546,16 +536,26 @@ struct BookDetailView: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    private var coverPhoto: MediaAsset? {
-        book.mediaAssets
-            .filter { $0.kind == .photo }
-            .sorted { $0.sortOrder < $1.sortOrder }
-            .first
+    private var detailPreviewAssets: [MediaAsset] {
+        switch book.cover {
+        case let .image(asset, source):
+            switch source {
+            case .dedicated:
+                return [asset] + book.mediaAssets
+            case .legacyMedia:
+                return book.mediaAssets
+            }
+        case .generated:
+            return book.mediaAssets
+        }
     }
 
     private var detailMediaAssets: [MediaAsset] {
-        guard let coverPhoto else { return book.mediaAssets }
-        return book.mediaAssets.filter { $0.id != coverPhoto.id }
+        guard case let .image(asset, source) = book.cover,
+              source == .legacyMedia else {
+            return book.mediaAssets
+        }
+        return book.mediaAssets.filter { $0.id != asset.id }
     }
 
     private var detailMediaAssetsBinding: Binding<[MediaAsset]> {
@@ -563,8 +563,13 @@ struct BookDetailView: View {
             get: { detailMediaAssets },
             set: { updatedDetailAssets in
                 guard canEditCollection else { return }
-                let updatedAssets = coverPhoto.map { [$0] + updatedDetailAssets } ?? updatedDetailAssets
-                persist(mediaAssets: updatedAssets)
+
+                if case let .image(asset, source) = book.cover,
+                   source == .legacyMedia {
+                    persist(mediaAssets: [asset] + updatedDetailAssets)
+                } else {
+                    persist(mediaAssets: updatedDetailAssets)
+                }
             }
         )
     }

@@ -35,7 +35,7 @@ struct MediaSection: View {
                             asset: asset,
                             isAnalysisHighlighted: asset.id == analysisHighlightedAssetID,
                             allowsDeletion: allowsDeletion,
-                            isReorderingEnabled: isEditing && asset.kind == .photo,
+                            isReorderingEnabled: isEditing && asset.kind == .photo && asset.itemID != nil,
                             draggedAssetID: $draggedAssetID,
                             moveAsset: moveAsset,
                             onTap: {
@@ -335,7 +335,7 @@ private struct MediaAssetGridTileView: View {
         VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.sm) {
             thumbnail
 
-            if asset.kind != .photo {
+            if asset.kind != .photo || asset.displayName?.isEmpty == false {
                 Text(mediaTitle)
                     .font(.caption)
                     .lineLimit(2)
