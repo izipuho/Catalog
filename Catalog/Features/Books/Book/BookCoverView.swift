@@ -54,7 +54,7 @@ struct BookCoverView: View {
     private func generatedCoverView(_ generatedCover: BookGeneratedCover) -> some View {
         ZStack {
             LinearGradient(
-                colors: palette(for: generatedCover.bookID),
+                colors: BookCoverPalette.colors(for: generatedCover.bookID),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -97,7 +97,56 @@ struct BookCoverView: View {
         min(max(coverSize.width * 0.06, 10), 16)
     }
 
-    private func palette(for bookID: UUID) -> [Color] {
+    private static let generatedAspectRatio: CGFloat = 2.0 / 3.0
+}
+
+/// Fills a card slot with a soft background derived from the resolved cover.
+struct BookCoverBackdropView: View {
+    let cover: BookCoverContent
+    let size: CGSize
+
+    var body: some View {
+        Group {
+            switch cover {
+            case let .image(asset, _):
+                MediaPreviewImage(
+                    identifier: asset.localIdentifier.isEmpty ? nil : asset.localIdentifier,
+                    originalData: asset.originalData,
+                    size: size,
+                    contentMode: .fill
+                )
+                .scaleEffect(1.08)
+                .blur(radius: blurRadius)
+
+            case let .generated(generatedCover):
+                LinearGradient(
+                    colors: BookCoverPalette.colors(for: generatedCover.bookID),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .overlay {
+            LinearGradient(
+                colors: [
+                    CatalogMediaContrast.scrimWeak,
+                    CatalogMediaContrast.scrimMedium
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .clipped()
+    }
+
+    private var blurRadius: CGFloat {
+        min(max(min(size.width, size.height) * 0.06, 8), 18)
+    }
+}
+
+private enum BookCoverPalette {
+    static func colors(for bookID: UUID) -> [Color] {
         let palettes: [[Color]] = [
             [
                 Color(red: 0.30, green: 0.18, blue: 0.13),
@@ -130,6 +179,4 @@ struct BookCoverView: View {
         }
         return palettes[index]
     }
-
-    private static let generatedAspectRatio: CGFloat = 2.0 / 3.0
 }
