@@ -49,7 +49,7 @@ struct BookDetailView: View {
     }
 
     var body: some View {
-        MediaQuickLookPresenter(mediaAssets: book.mediaAssets) { preview in
+        MediaQuickLookPresenter(mediaAssets: detailPreviewAssets) { preview in
             ScrollView {
                 VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.lg) {
                     header(preview: preview)
@@ -546,16 +546,28 @@ struct BookDetailView: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    private var coverPhoto: MediaAsset? {
+    private var fallbackCoverPhoto: MediaAsset? {
         book.mediaAssets
             .filter { $0.kind == .photo }
             .sorted { $0.sortOrder < $1.sortOrder }
             .first
     }
 
+    private var coverPhoto: MediaAsset? {
+        book.details.coverImage ?? fallbackCoverPhoto
+    }
+
+    private var detailPreviewAssets: [MediaAsset] {
+        guard let coverImage = book.details.coverImage else { return book.mediaAssets }
+        return [coverImage] + book.mediaAssets
+    }
+
     private var detailMediaAssets: [MediaAsset] {
-        guard let coverPhoto else { return book.mediaAssets }
-        return book.mediaAssets.filter { $0.id != coverPhoto.id }
+        guard book.details.coverImage == nil,
+              let fallbackCoverPhoto else {
+            return book.mediaAssets
+        }
+        return book.mediaAssets.filter { $0.id != fallbackCoverPhoto.id }
     }
 
     private var detailMediaAssetsBinding: Binding<[MediaAsset]> {
@@ -563,8 +575,13 @@ struct BookDetailView: View {
             get: { detailMediaAssets },
             set: { updatedDetailAssets in
                 guard canEditCollection else { return }
-                let updatedAssets = coverPhoto.map { [$0] + updatedDetailAssets } ?? updatedDetailAssets
-                persist(mediaAssets: updatedAssets)
+
+                if book.details.coverImage != nil {
+                    persist(mediaAssets: updatedDetailAssets)
+                } else {
+                    let updatedAssets = fallbackCoverPhoto.map { [$0] + updatedDetailAssets } ?? updatedDetailAssets
+                    persist(mediaAssets: updatedAssets)
+                }
             }
         )
     }
