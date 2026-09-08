@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Renders the resolved visual cover of a book.
+/// Renders the resolved visual cover of a book within the supplied maximum size.
 struct BookCoverView: View {
     let cover: BookCoverContent
     let size: CGSize
@@ -12,14 +12,43 @@ struct BookCoverView: View {
                 MediaPreviewImage(
                     identifier: asset.localIdentifier.isEmpty ? nil : asset.localIdentifier,
                     originalData: asset.originalData,
-                    size: size
+                    size: coverSize,
+                    contentMode: .fit
                 )
 
             case let .generated(generatedCover):
                 generatedCoverView(generatedCover)
+                    .frame(width: coverSize.width, height: coverSize.height)
             }
         }
-        .frame(width: size.width, height: size.height)
+        .frame(width: coverSize.width, height: coverSize.height)
+    }
+
+    private var coverSize: CGSize {
+        let ratio = coverAspectRatio
+        let widthAtMaximumHeight = size.height * ratio
+
+        if widthAtMaximumHeight <= size.width {
+            return CGSize(width: widthAtMaximumHeight, height: size.height)
+        }
+
+        return CGSize(width: size.width, height: size.width / ratio)
+    }
+
+    private var coverAspectRatio: CGFloat {
+        switch cover {
+        case let .image(asset, _):
+            guard let width = asset.width,
+                  let height = asset.height,
+                  width > 0,
+                  height > 0 else {
+                return Self.generatedAspectRatio
+            }
+            return CGFloat(width) / CGFloat(height)
+
+        case .generated:
+            return Self.generatedAspectRatio
+        }
     }
 
     private func generatedCoverView(_ generatedCover: BookGeneratedCover) -> some View {
@@ -53,19 +82,19 @@ struct BookCoverView: View {
     }
 
     private var generatedPadding: CGFloat {
-        min(max(size.width * 0.09, 10), 22)
+        min(max(coverSize.width * 0.09, 10), 22)
     }
 
     private var generatedSpacing: CGFloat {
-        min(max(size.width * 0.04, 6), 12)
+        min(max(coverSize.width * 0.04, 6), 12)
     }
 
     private var titleFontSize: CGFloat {
-        min(max(size.width * 0.105, 13), 30)
+        min(max(coverSize.width * 0.105, 13), 30)
     }
 
     private var authorFontSize: CGFloat {
-        min(max(size.width * 0.06, 10), 16)
+        min(max(coverSize.width * 0.06, 10), 16)
     }
 
     private func palette(for bookID: UUID) -> [Color] {
@@ -101,4 +130,6 @@ struct BookCoverView: View {
         }
         return palettes[index]
     }
+
+    private static let generatedAspectRatio: CGFloat = 2.0 / 3.0
 }
