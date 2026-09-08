@@ -28,14 +28,17 @@ struct BookCardView: View {
     }
 
     var body: some View {
-        mediaContent
-            .catalogSurfaceCard(cardMetrics: cardMetrics) {
-                BookCoverView(
-                    cover: book.cover,
-                    size: cardSize
-                )
-            }
-            .frame(width: cardSize.width, height: cardSize.height)
+        ZStack(alignment: .bottomLeading) {
+            BookCoverView(
+                cover: book.cover,
+                size: contentSize
+            )
+
+            mediaContent
+        }
+        .frame(width: contentSize.width, height: contentSize.height)
+        .catalogSurfaceCard(cardMetrics: cardMetrics)
+        .frame(width: cardSize.width, height: cardSize.height)
     }
 
     @ViewBuilder
@@ -47,17 +50,21 @@ struct BookCardView: View {
                 bright: true
             )
             .frame(
-                width: max(cardSize.width - (cardMetrics.cardPadding * 2), 0),
-                height: max(cardSize.height - (cardMetrics.cardPadding * 2), 0),
+                width: contentSize.width,
+                height: contentSize.height,
                 alignment: .bottomLeading
             )
         } else {
             Color.clear
-                .frame(
-                    width: max(cardSize.width - (cardMetrics.cardPadding * 2), 0),
-                    height: max(cardSize.height - (cardMetrics.cardPadding * 2), 0)
-                )
+                .frame(width: contentSize.width, height: contentSize.height)
         }
+    }
+
+    private var contentSize: CGSize {
+        CGSize(
+            width: max(cardSize.width - (cardMetrics.cardPadding * 2), 0),
+            height: max(cardSize.height - (cardMetrics.cardPadding * 2), 0)
+        )
     }
 }
 
