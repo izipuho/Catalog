@@ -17,28 +17,11 @@ struct BookEditorView: View {
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isSubtitleFocused: Bool
 
-    @State private var title: String
-    @State private var subtitle: String
-    @State private var notes: String
-    @State private var selectedAcquiredYearOption: String
-    @State private var condition: ItemCondition
-    @State private var acquisitionMethod: AcquisitionMethod
+    @State var editorState: BookEditorState
     @State private var tagInput = ""
-    @State private var tags: [String]
-    @State private var mediaAssets: [MediaAsset]
-    @State private var coverImage: MediaAsset?
     @State private var isGeneratingCoverImage = false
     @State private var isPresentingCoverCaptureFailure = false
 
-    @State private var languageCode: String
-    @State private var genre: String
-    @State private var pageCount: String
-    @State private var selectedPublicationYearOption: String
-    @State private var selectedSeries: BookSeries?
-    @State private var volumeNumber: String
-    @State private var selectedPublisher: Publisher?
-    @State private var contributors: [BookContributor]
-    @State private var identifiers: [BookIdentifier]
     @State private var catalogGenreSuggestions: [String] = []
     @State private var catalogSeries: [BookSeries] = []
     @State private var catalogPublishers: [Publisher] = []
@@ -59,24 +42,7 @@ struct BookEditorView: View {
         + Array(1900...Calendar.current.component(.year, from: .now)).reversed().map(String.init)
 
     private var publicationYearOptions: [String] {
-        let none = String(localized: "common.none")
-        let currentYear = Calendar.current.component(.year, from: .now)
-        var years = Array(1900...currentYear).map(String.init)
-
-        if let existingYear = existingBook?.details.publicationYear {
-            let value = String(existingYear)
-            if !years.contains(value) {
-                years.append(value)
-            }
-        }
-
-        if Int(selectedPublicationYearOption) != nil,
-           !years.contains(selectedPublicationYearOption) {
-            years.append(selectedPublicationYearOption)
-        }
-
-        years.sort { (Int($0) ?? 0) > (Int($1) ?? 0) }
-        return [none] + years
+        editorState.publicationYearOptions
     }
 
     private var genreSuggestions: [String] {
@@ -190,40 +156,12 @@ struct BookEditorView: View {
         self.onDelete = onDelete
         self.onSave = onSave
         self.editorItemID = book?.id ?? UUID()
-
-        let initialMedia = book?.mediaAssets ?? initialMediaAssets
-
-        _title = State(initialValue: book?.title ?? "")
-        _subtitle = State(initialValue: book?.details.subtitle ?? "")
-        _notes = State(initialValue: book?.notes ?? "")
-        _selectedAcquiredYearOption = State(
-            initialValue: book?.acquiredYear.map(String.init) ?? String(localized: "common.none")
-        )
-        _condition = State(initialValue: book?.condition ?? .good)
-        _acquisitionMethod = State(initialValue: book?.acquisitionMethod ?? .bought)
-        _tags = State(initialValue: book?.tags ?? [])
-        _mediaAssets = State(initialValue: initialMedia)
-        _coverImage = State(
-            initialValue: book?.details.coverImage?.with(
-                displayName: String(localized: "editor.media.cover")
+        _editorState = State(
+            initialValue: BookEditorState(
+                book: book,
+                initialMediaAssets: initialMediaAssets
             )
         )
-        _languageCode = State(initialValue: book?.details.languageCode ?? "")
-        _genre = State(initialValue: book?.details.genre ?? "")
-        _pageCount = State(initialValue: book?.details.pageCount.map(String.init) ?? "")
-        _selectedPublicationYearOption = State(
-            initialValue: book?.details.publicationYear.map(String.init) ?? String(localized: "common.none")
-        )
-        _selectedSeries = State(initialValue: book?.details.series)
-        _volumeNumber = State(initialValue: book?.details.volumeNumber.map(String.init) ?? "")
-        _selectedPublisher = State(initialValue: book?.details.publisher)
-        _contributors = State(
-            initialValue: (book?.details.contributors ?? []).sorted {
-                if $0.order != $1.order { return $0.order < $1.order }
-                return $0.person.sortName.localizedCaseInsensitiveCompare($1.person.sortName) == .orderedAscending
-            }
-        )
-        _identifiers = State(initialValue: book?.details.identifiers ?? [])
     }
 
     var body: some View {
@@ -383,7 +321,7 @@ struct BookEditorView: View {
                                     beginManualTextEditing(in: .title)
                                 }
                         } else {
-                            TextField(String(localized: "common.field.title"), text: $title)
+                            TextField(String(localized: "common.field.title"), text: titleBinding)
                                 .focused($isTitleFocused)
                         }
                     }
@@ -402,7 +340,7 @@ struct BookEditorView: View {
                                     beginManualTextEditing(in: .subtitle)
                                 }
                         } else {
-                            TextField("book.field.subtitle", text: $subtitle, axis: .vertical)
+                            TextField("book.field.subtitle", text: subtitleBinding, axis: .vertical)
                                 .focused($isSubtitleFocused)
                         }
                     }
@@ -452,7 +390,7 @@ struct BookEditorView: View {
                 Section("series.title") {
                     VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
                         BookSeriesPickerField(
-                            selection: $selectedSeries,
+                            selection: selectedSeriesBinding,
                             series: availableSeries,
                             collectionID: collection.id,
                             statusSystemImage: assignedReferenceStatusSystemImage(for: .field(.series)),
@@ -476,7 +414,7 @@ struct BookEditorView: View {
                 Section("publisher.title") {
                     VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
                         BookPublisherPickerField(
-                            selection: $selectedPublisher,
+                            selection: selectedPublisherBinding,
                             publishers: availablePublishers,
                             statusSystemImage: assignedReferenceStatusSystemImage(for: .field(.publisher)),
                             onCreate: { newPublisher in
@@ -496,7 +434,7 @@ struct BookEditorView: View {
                     VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
                         YearPickerField(
                             title: String(localized: "book.field.publication_year"),
-                            selection: $selectedPublicationYearOption,
+                            selection: selectedPublicationYearOptionBinding,
                             options: publicationYearOptions
                         )
 
@@ -508,14 +446,14 @@ struct BookEditorView: View {
 
                     optionalPositiveIntegerField(
                         title: String(localized: "book.field.pages"),
-                        text: $pageCount
+                        text: pageCountBinding
                     )
 
-                    BookLanguagePickerField(languageCode: $languageCode)
+                    BookLanguagePickerField(languageCode: languageCodeBinding)
 
                     LookupTextField(
                         title: String(localized: "book.field.genre"),
-                        value: $genre,
+                        value: genreBinding,
                         suggestions: genreSuggestions
                     )
                 }
@@ -558,7 +496,7 @@ struct BookEditorView: View {
                 Section(String(localized: "item.detail.section.collection_info")) {
                     YearPickerField(
                         title: String(localized: "item.detail.acquisition_year"),
-                        selection: $selectedAcquiredYearOption,
+                        selection: selectedAcquiredYearOptionBinding,
                         options: acquiredYearOptions
                     )
 
@@ -566,7 +504,7 @@ struct BookEditorView: View {
                         title: String(localized: "item.detail.acquisition"),
                         selectedLabel: acquisitionMethod.displayName,
                         options: AcquisitionMethod.allCases,
-                        selection: $acquisitionMethod,
+                        selection: acquisitionMethodBinding,
                         optionTitle: \.displayName
                     )
 
@@ -574,13 +512,13 @@ struct BookEditorView: View {
                         title: String(localized: "common.field.condition"),
                         selectedLabel: condition.displayName,
                         options: ItemCondition.allCases,
-                        selection: $condition,
+                        selection: conditionBinding,
                         optionTitle: \.displayName
                     )
                 }
 
                 Section(String(localized: "common.field.notes")) {
-                    TextField(String(localized: "common.field.notes"), text: $notes, axis: .vertical)
+                    TextField(String(localized: "common.field.notes"), text: notesBinding, axis: .vertical)
                         .lineLimit(4, reservesSpace: true)
 
                     VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.md) {
@@ -590,7 +528,7 @@ struct BookEditorView: View {
 
                         TagEditorSection(
                             tagInput: $tagInput,
-                            tags: $tags
+                            tags: tagsBinding
                         )
                     }
                 }
@@ -750,20 +688,17 @@ struct BookEditorView: View {
     }
 
     private var canSave: Bool {
-        isTitleValid
-            && isOptionalPositiveIntegerValid(pageCount)
-            && isVolumeValid
-            && !isGeneratingCoverImage
+        editorState.canSave(isGeneratingCoverImage: isGeneratingCoverImage)
     }
 
     private var isTitleValid: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        editorState.isTitleValid
     }
 
     private var volumeField: some View {
         VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
             LabeledContent("book.field.volume") {
-                numericTextField($volumeNumber)
+                numericTextField(volumeNumberBinding)
             }
 
             assignedTextFragments(for: .field(.volume))
@@ -783,28 +718,11 @@ struct BookEditorView: View {
     }
 
     private var isVolumeValid: Bool {
-        guard let selectedSeries else { return true }
-
-        let trimmed = volumeNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return true }
-        guard let number = Int(trimmed), number > 0 else { return false }
-
-        if let totalBookCount = selectedSeries.totalBookCount {
-            return number <= totalBookCount
-        }
-
-        return true
+        editorState.isVolumeValid
     }
 
     private var volumeValidationMessage: String {
-        if let totalBookCount = selectedSeries?.totalBookCount {
-            return String.localizedStringWithFormat(
-                String(localized: "common.validation.whole_number_range_1_to_max"),
-                totalBookCount
-            )
-        }
-
-        return String(localized: "book.validation.positive_whole_number")
+        editorState.volumeValidationMessage
     }
 
     private func optionalPositiveIntegerField(
@@ -840,10 +758,7 @@ struct BookEditorView: View {
     }
 
     private func isOptionalPositiveIntegerValid(_ value: String) -> Bool {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return true }
-        guard let number = Int(trimmed) else { return false }
-        return number > 0
+        editorState.isOptionalPositiveIntegerValid(value)
     }
 
     @MainActor
@@ -1427,66 +1342,14 @@ struct BookEditorView: View {
             return
         }
 
-        let itemID = editorItemID
-        let normalizedMediaAssets = mediaAssets.enumerated().map { index, asset in
-            asset.with(itemID: itemID, sortOrder: index)
-        }
-        let normalizedContributors = contributors.enumerated().map { index, contributor in
-            var normalized = contributor
-            normalized.order = index
-            return normalized
-        }
-        let existingItem = existingBook?.item
-
-        let book = BookRecord(
-            item: ItemRecord(
-                id: itemID,
-                collectionID: existingItem?.collectionID ?? collection.id,
-                kind: .books,
-                locationID: existingItem?.locationID,
-                originPlaceID: existingItem?.originPlaceID,
-                createdAt: existingItem?.createdAt ?? .now,
-                createdBy: existingItem?.createdBy ?? "me",
-                title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-                notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
-                acquiredYear: Int(selectedAcquiredYearOption),
-                condition: condition,
-                acquisitionMethod: acquisitionMethod,
-                isFavorite: existingItem?.isFavorite ?? false,
-                tags: tags,
-                originPlace: existingItem?.originPlace,
-                storageLocation: existingItem?.storageLocation,
-                storagePath: existingItem?.storagePath,
-                mediaAssets: normalizedMediaAssets
-            ),
-            details: BookDetails(
-                itemID: itemID,
-                subtitle: optionalString(subtitle),
-                languageCode: optionalString(languageCode)?.lowercased(),
-                genre: optionalString(genre),
-                pageCount: optionalPositiveInt(pageCount),
-                publicationYear: Int(selectedPublicationYearOption),
-                volumeNumber: selectedSeries == nil ? nil : optionalPositiveInt(volumeNumber),
-                coverImage: coverImage,
-                publisher: selectedPublisher,
-                contributors: normalizedContributors,
-                series: selectedSeries,
-                identifiers: identifiers
-            )
+        let book = editorState.makeBook(
+            itemID: editorItemID,
+            collectionID: collection.id,
+            existingBook: existingBook
         )
 
         onSave(book)
         dismiss()
-    }
-
-    private func optionalString(_ value: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func optionalPositiveInt(_ value: String) -> Int? {
-        guard let number = optionalString(value).flatMap(Int.init), number > 0 else { return nil }
-        return number
     }
 
     private static func normalizedGenreSuggestions(_ values: [String]) -> [String] {
