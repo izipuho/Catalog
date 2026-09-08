@@ -31,6 +31,7 @@ struct BookDetailView: View {
     @State private var draftHomeLocations: [Location] = []
     @State private var shouldPresentLocationPickerAfterHomeEditor = false
     @State private var isPresentingUnsavedChangesConfirmation = false
+    @State private var isHeaderTitleVisible = true
 
     init(
         book: Binding<BookRecord>,
@@ -84,7 +85,7 @@ struct BookDetailView: View {
             }
             .scrollBounceBehavior(.basedOnSize, axes: .vertical)
             .interactiveDismissDisabled(canEditCollection && isNotesOrTagsDirty)
-            .navigationTitle(book.title)
+            .navigationTitle(isHeaderTitleVisible ? "" : book.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
@@ -203,6 +204,9 @@ struct BookDetailView: View {
                 Text(book.title)
                     .font(.title2.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
+                    .onScrollVisibilityChange(threshold: 0.01) { isVisible in
+                        isHeaderTitleVisible = isVisible
+                    }
 
                 // Subtitle belongs to the bibliographic identity, so it stays directly under the title rather than in metadata.
                 if let subtitle = book.details.subtitle, !subtitle.isEmpty {
