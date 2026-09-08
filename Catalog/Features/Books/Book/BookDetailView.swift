@@ -232,29 +232,19 @@ struct BookDetailView: View {
         .padding(.horizontal, CatalogMetrics.Insets.screen)
     }
 
-    @ViewBuilder
     private func cover(preview: @escaping (MediaAsset) -> Void) -> some View {
-        if let coverPhoto {
-            MediaPreviewImage(
-                identifier: coverPhoto.localIdentifier.isEmpty ? nil : coverPhoto.localIdentifier,
-                originalData: coverPhoto.originalData,
-                size: CGSize(width: 112, height: 158)
-            )
-            .frame(width: 112, height: 158)
-            .clipShape(RoundedRectangle(cornerRadius: CatalogMetrics.CornerRadius.thumbnail, style: .continuous))
-            .contentShape(Rectangle())
-            .onTapGesture {
-                preview(coverPhoto)
-            }
-        } else {
-            RoundedRectangle(cornerRadius: CatalogMetrics.CornerRadius.thumbnail, style: .continuous)
-                .fill(.secondary.opacity(0.12))
-                .frame(width: 112, height: 158)
-                .overlay {
-                    Image(systemName: "book.closed")
-                        .font(.system(size: 36))
-                        .foregroundStyle(.secondary)
-                }
+        let cover = book.cover
+
+        return BookCoverView(
+            cover: cover,
+            size: CGSize(width: 112, height: 158)
+        )
+        .frame(width: 112, height: 158)
+        .clipShape(RoundedRectangle(cornerRadius: CatalogMetrics.CornerRadius.thumbnail, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard let mediaAsset = cover.mediaAsset else { return }
+            preview(mediaAsset)
         }
     }
 
@@ -546,28 +536,26 @@ struct BookDetailView: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    private var fallbackCoverPhoto: MediaAsset? {
-        book.mediaAssets
-            .filter { $0.kind == .photo }
-            .sorted { $0.sortOrder < $1.sortOrder }
-            .first
-    }
-
-    private var coverPhoto: MediaAsset? {
-        book.details.coverImage ?? fallbackCoverPhoto
-    }
-
     private var detailPreviewAssets: [MediaAsset] {
-        guard let coverImage = book.details.coverImage else { return book.mediaAssets }
-        return [coverImage] + book.mediaAssets
+        switch book.cover {
+        case let .image(asset, source):
+            switch source {
+            case .dedicated:
+                return [asset] + book.mediaAssets
+            case .legacyMedia:
+                return book.mediaAssets
+            }
+        case .generated:
+            return book.mediaAssets
+        }
     }
 
     private var detailMediaAssets: [MediaAsset] {
-        guard book.details.coverImage == nil,
-              let fallbackCoverPhoto else {
+        guard case let .image(asset, source) = book.cover,
+              source == .legacyMedia else {
             return book.mediaAssets
         }
-        return book.mediaAssets.filter { $0.id != fallbackCoverPhoto.id }
+        return book.mediaAssets.filter { $0.id != asset.id }
     }
 
     private var detailMediaAssetsBinding: Binding<[MediaAsset]> {
@@ -576,11 +564,11 @@ struct BookDetailView: View {
             set: { updatedDetailAssets in
                 guard canEditCollection else { return }
 
-                if book.details.coverImage != nil {
-                    persist(mediaAssets: updatedDetailAssets)
+                if case let .image(asset, source) = book.cover,
+                   source == .legacyMedia {
+                    persist(mediaAssets: [asset] + updatedDetailAssets)
                 } else {
-                    let updatedAssets = fallbackCoverPhoto.map { [$0] + updatedDetailAssets } ?? updatedDetailAssets
-                    persist(mediaAssets: updatedAssets)
+                    persist(mediaAssets: updatedDetailAssets)
                 }
             }
         )
