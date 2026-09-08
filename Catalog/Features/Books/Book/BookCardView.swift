@@ -28,7 +28,7 @@ struct BookCardView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
+        ZStack {
             BookCoverView(
                 cover: book.cover,
                 size: contentSize
