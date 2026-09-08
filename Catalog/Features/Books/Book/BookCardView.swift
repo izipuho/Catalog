@@ -4,7 +4,7 @@ import SwiftUI
 import CoreData
 #endif
 
-/// Displays a book card using the shared catalog card system.
+/// Displays a book card using Books-specific cover geometry inside the shared catalog slot.
 struct BookCardView: View {
     let book: BookRecord
     let cardSize: CGSize
@@ -29,41 +29,119 @@ struct BookCardView: View {
 
     var body: some View {
         ZStack {
-            BookCoverView(
+            BookCoverBackdropView(
                 cover: book.cover,
-                size: contentSize
+                size: cardSize
             )
 
-            mediaContent
+            if usesWideComposition {
+                wideContent
+            } else {
+                coverContent
+            }
         }
-        .frame(width: contentSize.width, height: contentSize.height)
-        .catalogSurfaceCard(cardMetrics: cardMetrics)
+        .frame(width: cardSize.width, height: cardSize.height)
+        .clipShape(cardShape)
+        .glassEffect(.regular.interactive(), in: cardShape)
+    }
+
+    private var coverContent: some View {
+        ZStack {
+            BookCoverView(
+                cover: book.cover,
+                size: foregroundCoverSize
+            )
+            .shadow(color: .black.opacity(0.18), radius: 5, y: 2)
+
+            if let accessoryRowStyle = style.accessoryRow, !accessories.isEmpty {
+                CatalogCardAccessoryRow(
+                    accessories: accessories,
+                    style: accessoryRowStyle,
+                    bright: true
+                )
+                .frame(
+                    width: max(cardSize.width - (coverInset * 2), 0),
+                    height: max(cardSize.height - (coverInset * 2), 0),
+                    alignment: .bottomLeading
+                )
+            }
+        }
         .frame(width: cardSize.width, height: cardSize.height)
     }
 
-    @ViewBuilder
-    private var mediaContent: some View {
-        if let accessoryRowStyle = style.accessoryRow, !accessories.isEmpty {
-            CatalogCardAccessoryRow(
-                accessories: accessories,
-                style: accessoryRowStyle,
-                bright: true
+    private var wideContent: some View {
+        HStack(alignment: .center, spacing: wideSpacing) {
+            BookCoverView(
+                cover: book.cover,
+                size: wideCoverMaximumSize
             )
-            .frame(
-                width: contentSize.width,
-                height: contentSize.height,
-                alignment: .bottomLeading
-            )
-        } else {
-            Color.clear
-                .frame(width: contentSize.width, height: contentSize.height)
+            .shadow(color: .black.opacity(0.20), radius: 6, y: 2)
+
+            VStack(alignment: .leading, spacing: cardMetrics.contentSpacing) {
+                if let titleStyle = style.title {
+                    Text(book.title)
+                        .font(titleStyle.titleFont)
+                        .foregroundStyle(CatalogMediaContrast.onMediaPrimary)
+                        .lineLimit(titleStyle.titleLineLimit)
+
+                    if titleStyle.showsSubtitle {
+                        let authors = book.authorNames.joined(separator: ", ")
+                        if !authors.isEmpty {
+                            Text(authors)
+                                .font(titleStyle.subtitleFont)
+                                .foregroundStyle(CatalogMediaContrast.onMediaSecondary)
+                                .lineLimit(titleStyle.subtitleLineLimit)
+                        }
+                    }
+                }
+
+                Spacer(minLength: cardMetrics.contentSpacing)
+
+                if let accessoryRowStyle = style.accessoryRow, !accessories.isEmpty {
+                    CatalogCardAccessoryRow(
+                        accessories: accessories,
+                        style: accessoryRowStyle,
+                        bright: true
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .padding(wideInset)
+        .frame(width: cardSize.width, height: cardSize.height)
     }
 
-    private var contentSize: CGSize {
+    private var cardShape: RoundedRectangle {
+        CatalogShapes.card(cornerRadius: cardMetrics.cornerRadius)
+    }
+
+    private var usesWideComposition: Bool {
+        cardSize.width >= cardSize.height * 1.45
+    }
+
+    private var coverInset: CGFloat {
+        min(max(min(cardSize.width, cardSize.height) * 0.035, 4), 10)
+    }
+
+    private var foregroundCoverSize: CGSize {
         CGSize(
-            width: max(cardSize.width - (cardMetrics.cardPadding * 2), 0),
-            height: max(cardSize.height - (cardMetrics.cardPadding * 2), 0)
+            width: max(cardSize.width - (coverInset * 2), 0),
+            height: max(cardSize.height - (coverInset * 2), 0)
+        )
+    }
+
+    private var wideInset: CGFloat {
+        min(max(cardSize.height * 0.055, 10), 16)
+    }
+
+    private var wideSpacing: CGFloat {
+        max(cardMetrics.contentSpacing * 2, CatalogMetrics.Spacing.md)
+    }
+
+    private var wideCoverMaximumSize: CGSize {
+        CGSize(
+            width: cardSize.width * 0.38,
+            height: max(cardSize.height - (wideInset * 2), 0)
         )
     }
 }
