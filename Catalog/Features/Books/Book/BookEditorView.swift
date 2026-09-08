@@ -651,7 +651,7 @@ struct BookEditorView: View {
             .alert(String(localized: "editor.media.cover"), isPresented: $isPresentingCoverCaptureFailure) {
                 Button(String(localized: "common.ok"), role: .cancel) {}
             } message: {
-                Text("Couldn’t detect the full book cover. Retake the photo with all four cover edges clearly visible.")
+                Text("book.cover.not_found_on_photo.message")
             }
             .task(id: collection.id) {
                 loadCatalogMetadata()
