@@ -358,7 +358,7 @@ func makeSearchTabContent(
 func makeCollectionDestinationContent(
     collection: CollectionSummary,
     catalogSnapshot: CatalogSnapshot?,
-    repository: any CatalogRepository,
+    repository: any AppRepository,
     coreDataContainer: NSPersistentCloudKitContainer,
     layoutMode: Binding<CatalogCardLayoutMode>,
     onItemSelected: ((UUID) -> Void)?,
@@ -379,7 +379,7 @@ func makeCollectionDestinationContent(
 @MainActor
 func makeItemDetailContent(
     itemID: UUID,
-    repository: any CatalogRepository,
+    repository: any AppRepository,
     catalogSnapshot: CatalogSnapshot?,
     onClose: (() -> Void)?
 ) -> AnyView {

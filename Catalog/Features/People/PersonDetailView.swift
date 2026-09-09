@@ -23,7 +23,7 @@ struct PersonDetailView: View {
     let books: [BookRecord]
     let allBookCount: Int
     let places: [Place]
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let canEditCollection: Bool
     let accentColor: Color
     let onPersonSaved: (Person) -> Void
@@ -41,7 +41,7 @@ struct PersonDetailView: View {
         books: [BookRecord],
         allBookCount: Int,
         places: [Place],
-        repository: any CatalogRepository,
+        repository: any AppRepository,
         canEditCollection: Bool,
         accentColor: Color,
         onPersonSaved: @escaping (Person) -> Void,
@@ -166,13 +166,13 @@ struct PersonDetailView: View {
                 places: places,
                 bookCount: allBookCount,
                 onDelete: {
-                    (repository as! any BookCatalogRepository).deletePerson(personID: person.id)
+                    repository.deletePerson(personID: person.id)
                     onPersonDeleted(person.id)
                     isPresentingEditor = false
                     dismiss()
                 }
             ) { updatedPerson in
-                (repository as! any BookCatalogRepository).savePerson(updatedPerson)
+                repository.savePerson(updatedPerson)
                 person = updatedPerson
                 onPersonSaved(updatedPerson)
             }

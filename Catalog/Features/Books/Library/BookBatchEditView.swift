@@ -472,6 +472,6 @@ extension LibraryView {
                 details: bookEdit.applying(to: book.details)
             )
         }
-        (repository as! any BookCatalogRepository).saveBookRecords(updatedBooks)
+        repository.saveBookRecords(updatedBooks)
     }
 }

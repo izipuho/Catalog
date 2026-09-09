@@ -30,7 +30,7 @@ private extension BookFilters {
 struct LibraryView: View {
     let collection: CollectionSummary
     let catalogSnapshot: CatalogSnapshot?
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let coreDataContainer: NSPersistentCloudKitContainer
     let layoutMode: Binding<CatalogCardLayoutMode>
     let onBookSelected: ((UUID) -> Void)?
@@ -63,7 +63,7 @@ struct LibraryView: View {
     init(
         collection: CollectionSummary,
         catalogSnapshot: CatalogSnapshot?,
-        repository: any CatalogRepository,
+        repository: any AppRepository,
         coreDataContainer: NSPersistentCloudKitContainer,
         layoutMode: Binding<CatalogCardLayoutMode>,
         onBookSelected: ((UUID) -> Void)? = nil
@@ -232,7 +232,7 @@ struct LibraryView: View {
                     collection: collection,
                     initialMediaAssets: draftMediaAssets
                 ) { book in
-                    (repository as! any BookCatalogRepository).saveBookRecord(book)
+                    repository.saveBookRecord(book)
                 }
             }
             .sheet(isPresented: $isPresentingBatchAdd, onDismiss: clearDraftBook) {
@@ -553,7 +553,7 @@ struct LibraryView: View {
         for book in books {
             var updatedItem = book.item
             updatedItem.setStorageLocation(location, path: storagePath)
-            (repository as! any BookCatalogRepository).saveBookRecord(
+            repository.saveBookRecord(
                 BookRecord(item: updatedItem, details: book.details)
             )
         }
@@ -568,14 +568,14 @@ struct LibraryView: View {
                 details: book.details
             )
         }
-        (repository as! any BookCatalogRepository).saveBookRecords(updatedBooks)
+        repository.saveBookRecords(updatedBooks)
     }
 
     private func deleteBooks(_ books: [BookRecord]) {
         guard canEditLibrary else { return }
 
         for book in books {
-            (repository as! any BookCatalogRepository).deleteBookRecord(bookID: book.id)
+            repository.deleteBookRecord(bookID: book.id)
         }
     }
 

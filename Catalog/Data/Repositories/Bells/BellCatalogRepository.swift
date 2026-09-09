@@ -1,5 +1,7 @@
 import Foundation
 
+typealias AppRepository = CatalogRepository & BellCatalogRepository
+
 /// Defines the bell-specific repository operations.
 @MainActor
 protocol BellCatalogRepository {

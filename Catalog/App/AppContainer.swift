@@ -4,9 +4,9 @@ import CoreData
 /// Represents app container data and behavior.
 @MainActor
 struct AppContainer {
-    let repository: any CatalogRepository
+    let repository: any AppRepository
 
-    init(repository: any CatalogRepository) {
+    init(repository: any AppRepository) {
         self.repository = repository
     }
 
@@ -14,4 +14,3 @@ struct AppContainer {
         self.repository = CoreDataCatalogRepository(context: coreDataContainer.viewContext)
     }
 }
- 

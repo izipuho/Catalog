@@ -5,7 +5,7 @@ import SwiftUI
 struct BookBatchAddView: View {
     let collection: CollectionSummary
     let initialMediaAssets: [MediaAsset]
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     private let onComplete: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -34,7 +34,7 @@ struct BookBatchAddView: View {
     init(
         collection: CollectionSummary,
         initialMediaAssets: [MediaAsset],
-        repository: any CatalogRepository,
+        repository: any AppRepository,
         onComplete: @escaping () -> Void = {}
     ) {
         self.collection = collection
@@ -253,7 +253,7 @@ struct BookBatchAddView: View {
             )
         }
 
-        (repository as! any BookCatalogRepository).saveBookRecords(books)
+        repository.saveBookRecords(books)
         onComplete()
         dismiss()
     }

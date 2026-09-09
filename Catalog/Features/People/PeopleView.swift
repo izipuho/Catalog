@@ -4,7 +4,7 @@ import SwiftUI
 struct PeopleView: View {
     let collection: CollectionSummary
     let catalogSnapshot: CatalogSnapshot?
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let canEditCollection: Bool
     let onBookSelected: ((UUID) -> Void)?
 
@@ -16,7 +16,7 @@ struct PeopleView: View {
     init(
         collection: CollectionSummary,
         catalogSnapshot: CatalogSnapshot?,
-        repository: any CatalogRepository,
+        repository: any AppRepository,
         canEditCollection: Bool,
         onBookSelected: ((UUID) -> Void)? = nil
     ) {

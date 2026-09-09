@@ -1,5 +1,7 @@
 import Foundation
 
+typealias AppRepository = CatalogRepository & BookCatalogRepository
+
 /// Defines the book-specific repository operations.
 @MainActor
 protocol BookCatalogRepository {

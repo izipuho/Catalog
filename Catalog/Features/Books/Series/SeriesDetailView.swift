@@ -5,7 +5,7 @@ struct SeriesDetailView: View {
     @State private var series: BookSeries
     let books: [BookRecord]
     let publishers: [Publisher]
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let canEditCollection: Bool
     let accentColor: Color
     let onSeriesSaved: (BookSeries) -> Void
@@ -20,7 +20,7 @@ struct SeriesDetailView: View {
         series: BookSeries,
         books: [BookRecord],
         publishers: [Publisher],
-        repository: any CatalogRepository,
+        repository: any AppRepository,
         canEditCollection: Bool,
         accentColor: Color,
         onSeriesSaved: @escaping (BookSeries) -> Void,
@@ -132,13 +132,13 @@ struct SeriesDetailView: View {
                 publishers: publishers,
                 bookCount: books.count,
                 onDelete: {
-                    (repository as! any BookCatalogRepository).deleteBookSeries(seriesID: series.id)
+                    repository.deleteBookSeries(seriesID: series.id)
                     onSeriesDeleted(series.id)
                     isPresentingEditor = false
                     dismiss()
                 }
             ) { updatedSeries in
-                (repository as! any BookCatalogRepository).saveBookSeries(updatedSeries)
+                repository.saveBookSeries(updatedSeries)
                 series = updatedSeries
                 onSeriesSaved(updatedSeries)
             }

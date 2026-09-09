@@ -6,7 +6,7 @@ struct LibraryDashboardView: View {
     let accentColor: Color
     let collection: CollectionSummary
     let catalogSnapshot: CatalogSnapshot?
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let canEditCollection: Bool
     let onBookSelected: ((UUID) -> Void)?
     let sharingState: CollectionSharingState?
@@ -53,7 +53,7 @@ private struct DashboardCardStrip: View {
     let stats: LibraryStats
     let collection: CollectionSummary
     let catalogSnapshot: CatalogSnapshot?
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let canEditCollection: Bool
     let onBookSelected: ((UUID) -> Void)?
     let sharingState: CollectionSharingState?

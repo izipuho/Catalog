@@ -14,7 +14,7 @@ private enum BookReferenceDestination: Hashable {
 /// Displays the catalog details for a single book.
 struct BookDetailView: View {
     @Binding var book: BookRecord
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let catalogSnapshot: CatalogSnapshot?
     let canEditCollection: Bool
     let canChangeFavorite: Bool
@@ -35,7 +35,7 @@ struct BookDetailView: View {
 
     init(
         book: Binding<BookRecord>,
-        repository: any CatalogRepository,
+        repository: any AppRepository,
         catalogSnapshot: CatalogSnapshot?,
         canEditCollection: Bool,
         canChangeFavorite: Bool = false,
@@ -877,7 +877,7 @@ struct BookDetailView: View {
     }
 
     private func deleteBook() {
-        (repository as! any BookCatalogRepository).deleteBookRecord(bookID: book.id)
+        repository.deleteBookRecord(bookID: book.id)
         isPresentingEditor = false
 
         Task { @MainActor in
@@ -897,7 +897,7 @@ struct BookDetailView: View {
 
     private func save(_ updatedBook: BookRecord) {
         book = updatedBook
-        (repository as! any BookCatalogRepository).saveBookRecord(updatedBook)
+        repository.saveBookRecord(updatedBook)
     }
 
     private func storagePath(for location: Location, locationsByID: [UUID: Location]) -> StoragePath {
@@ -927,7 +927,7 @@ struct BookDetailView: View {
 /// Resolves a book by identifier and keeps the presented detail synchronized with the catalog snapshot.
 struct BookDetailContainer: View {
     let bookID: UUID
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let catalogSnapshot: CatalogSnapshot?
     let onClose: (() -> Void)?
 
@@ -937,7 +937,7 @@ struct BookDetailContainer: View {
 
     init(
         bookID: UUID,
-        repository: any CatalogRepository,
+        repository: any AppRepository,
         catalogSnapshot: CatalogSnapshot?,
         onClose: (() -> Void)? = nil
     ) {

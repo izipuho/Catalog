@@ -48,7 +48,7 @@ enum RootTab: String, CaseIterable, Identifiable, Hashable {
 
 /// Displays the app shell view interface.
 struct AppShellView: View {
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let coreDataContainer: NSPersistentCloudKitContainer
     @Environment(\.managedObjectContext) private var managedObjectContext
     @State private var catalogSnapshot: CatalogSnapshot?
@@ -268,7 +268,7 @@ struct AppShellView: View {
 }
 
 private struct RootShellView<Destination: View>: View {
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let catalogSnapshot: CatalogSnapshot?
     @Binding var selectedRootTab: RootTab
     @Binding var collectionsPath: NavigationPath

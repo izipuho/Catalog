@@ -28,7 +28,7 @@ struct PublisherDetailView: View {
     let allBookCount: Int
     let allSeriesCount: Int
     let places: [Place]
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let canEditCollection: Bool
     let accentColor: Color
     let onPublisherSaved: (Publisher) -> Void
@@ -48,7 +48,7 @@ struct PublisherDetailView: View {
         allBookCount: Int,
         allSeriesCount: Int,
         places: [Place],
-        repository: any CatalogRepository,
+        repository: any AppRepository,
         canEditCollection: Bool,
         accentColor: Color,
         onPublisherSaved: @escaping (Publisher) -> Void,
@@ -177,13 +177,13 @@ struct PublisherDetailView: View {
                 bookCount: allBookCount,
                 seriesCount: allSeriesCount,
                 onDelete: {
-                    (repository as! any BookCatalogRepository).deletePublisher(publisherID: publisher.id)
+                    repository.deletePublisher(publisherID: publisher.id)
                     onPublisherDeleted(publisher.id)
                     isPresentingEditor = false
                     dismiss()
                 }
             ) { updatedPublisher in
-                (repository as! any BookCatalogRepository).savePublisher(updatedPublisher)
+                repository.savePublisher(updatedPublisher)
                 publisher = updatedPublisher
                 onPublisherSaved(updatedPublisher)
             }

@@ -4,7 +4,7 @@ import SwiftUI
 struct SeriesView: View {
     let collection: CollectionSummary
     let catalogSnapshot: CatalogSnapshot?
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let canEditCollection: Bool
     let onBookSelected: ((UUID) -> Void)?
 
@@ -17,7 +17,7 @@ struct SeriesView: View {
     init(
         collection: CollectionSummary,
         catalogSnapshot: CatalogSnapshot?,
-        repository: any CatalogRepository,
+        repository: any AppRepository,
         canEditCollection: Bool,
         onBookSelected: ((UUID) -> Void)? = nil
     ) {
@@ -131,7 +131,7 @@ struct SeriesView: View {
                 series: nil,
                 publishers: availablePublishers
             ) { series in
-                (repository as! any BookCatalogRepository).saveBookSeries(series)
+                repository.saveBookSeries(series)
                 upsertLocalSeries(series)
             }
         }
