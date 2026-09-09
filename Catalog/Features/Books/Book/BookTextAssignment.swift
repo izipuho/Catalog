@@ -21,18 +21,6 @@ struct BookTextAssignment {
     let confidence: Double
 }
 
-enum BookReferenceResolutionStatus {
-    case existing
-    case new
-
-    var systemImage: String {
-        switch self {
-        case .existing: "checkmark.circle.fill"
-        case .new: "plus.circle"
-        }
-    }
-}
-
 enum BookTextAssignmentRules {
     static func makeAssignment(from fragments: [TextFragment]) -> BookTextAssignment {
         BookTextAssignment(

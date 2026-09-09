@@ -17,28 +17,11 @@ struct BookEditorView: View {
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isSubtitleFocused: Bool
 
-    @State private var title: String
-    @State private var subtitle: String
-    @State private var notes: String
-    @State private var selectedAcquiredYearOption: String
-    @State private var condition: ItemCondition
-    @State private var acquisitionMethod: AcquisitionMethod
+    @State var editorState: BookEditorState
     @State private var tagInput = ""
-    @State private var tags: [String]
-    @State private var mediaAssets: [MediaAsset]
-    @State private var coverImage: MediaAsset?
     @State private var isGeneratingCoverImage = false
     @State private var isPresentingCoverCaptureFailure = false
 
-    @State private var languageCode: String
-    @State private var genre: String
-    @State private var pageCount: String
-    @State private var selectedPublicationYearOption: String
-    @State private var selectedSeries: BookSeries?
-    @State private var volumeNumber: String
-    @State private var selectedPublisher: Publisher?
-    @State private var contributors: [BookContributor]
-    @State private var identifiers: [BookIdentifier]
     @State private var catalogGenreSuggestions: [String] = []
     @State private var catalogSeries: [BookSeries] = []
     @State private var catalogPublishers: [Publisher] = []
@@ -50,82 +33,27 @@ struct BookEditorView: View {
     @State private var isPresentingDeleteConfirmation = false
     @State private var photoAnalysis = BookPhotoAnalysisController()
     @State private var didStartInitialAnalysis = false
-    @State private var textFragmentState = TextFragmentState<BookTextTarget>()
-    @State private var authorBaseNames: [Int: String] = [:]
+    @State private var textAssignmentController = BookTextAssignmentController()
 
     private let editorItemID: UUID
     private let coverExtractor = BookCoverExtractor()
     private let acquiredYearOptions = [String(localized: "common.none")]
         + Array(1900...Calendar.current.component(.year, from: .now)).reversed().map(String.init)
 
-    private var publicationYearOptions: [String] {
-        let none = String(localized: "common.none")
-        let currentYear = Calendar.current.component(.year, from: .now)
-        var years = Array(1900...currentYear).map(String.init)
-
-        if let existingYear = existingBook?.details.publicationYear {
-            let value = String(existingYear)
-            if !years.contains(value) {
-                years.append(value)
-            }
-        }
-
-        if Int(selectedPublicationYearOption) != nil,
-           !years.contains(selectedPublicationYearOption) {
-            years.append(selectedPublicationYearOption)
-        }
-
-        years.sort { (Int($0) ?? 0) > (Int($1) ?? 0) }
-        return [none] + years
-    }
-
     private var genreSuggestions: [String] {
         Self.normalizedGenreSuggestions(initialGenreSuggestions + catalogGenreSuggestions)
     }
 
-    private var availableSeries: [BookSeries] {
-        var uniqueByID = Dictionary(catalogSeries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        if let selectedSeries {
-            uniqueByID[selectedSeries.id] = selectedSeries
-        }
-
-        return uniqueByID.values.sorted {
-            let comparison = $0.name.localizedCaseInsensitiveCompare($1.name)
-            if comparison != .orderedSame {
-                return comparison == .orderedAscending
-            }
-            return $0.id.uuidString < $1.id.uuidString
-        }
-    }
-
-    private var availablePublishers: [Publisher] {
-        var uniqueByID = Dictionary(catalogPublishers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        if let selectedPublisher {
-            uniqueByID[selectedPublisher.id] = selectedPublisher
-        }
-
-        return uniqueByID.values.sorted {
-            let comparison = $0.name.localizedCaseInsensitiveCompare($1.name)
-            if comparison != .orderedSame {
-                return comparison == .orderedAscending
-            }
-            return $0.id.uuidString < $1.id.uuidString
-        }
-    }
-
-    private var availablePeople: [Person] {
-        var uniqueByID = Dictionary(catalogPeople.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        for contributor in contributors {
-            uniqueByID[contributor.person.id] = contributor.person
-        }
-
-        return uniqueByID.values.sorted {
-            let comparison = $0.sortName.localizedCaseInsensitiveCompare($1.sortName)
-            if comparison != .orderedSame {
-                return comparison == .orderedAscending
-            }
-            return $0.id.uuidString < $1.id.uuidString
-        }
+    private var referenceResolver: BookReferenceResolver {
+        BookReferenceResolver(
+            collectionID: collection.id,
+            catalogSeries: catalogSeries,
+            catalogPublishers: catalogPublishers,
+            catalogPeople: catalogPeople,
+            contributors: editorState.contributors,
+            selectedSeries: editorState.selectedSeries,
+            selectedPublisher: editorState.selectedPublisher
+        )
     }
 
     private var shouldShowPhotoAnalysisSection: Bool {
@@ -133,7 +61,7 @@ struct BookEditorView: View {
     }
 
     private var firstPhotoAsset: MediaAsset? {
-        mediaAssets
+        editorState.mediaAssets
             .filter { $0.kind == .photo }
             .sorted { $0.sortOrder < $1.sortOrder }
             .first
@@ -146,25 +74,25 @@ struct BookEditorView: View {
     private var editorMediaAssets: Binding<[MediaAsset]> {
         Binding(
             get: {
-                guard let coverImage else { return mediaAssets }
-                return [coverImage] + mediaAssets
+                guard let coverImage = editorState.coverImage else { return editorState.mediaAssets }
+                return [coverImage] + editorState.mediaAssets
             },
             set: { updatedAssets in
-                guard let coverImage else {
-                    mediaAssets = updatedAssets
+                guard let coverImage = editorState.coverImage else {
+                    editorState.mediaAssets = updatedAssets
                     return
                 }
 
                 if !updatedAssets.contains(where: { $0.id == coverImage.id }) {
-                    self.coverImage = nil
+                    editorState.coverImage = nil
                 }
-                mediaAssets = updatedAssets.filter { $0.id != coverImage.id }
+                editorState.mediaAssets = updatedAssets.filter { $0.id != coverImage.id }
             }
         )
     }
 
     private var textAssignments: [BookTextTarget: [TextFragment]] {
-        textFragmentState.assignments
+        textAssignmentController.assignments
     }
 
     init(
@@ -190,40 +118,12 @@ struct BookEditorView: View {
         self.onDelete = onDelete
         self.onSave = onSave
         self.editorItemID = book?.id ?? UUID()
-
-        let initialMedia = book?.mediaAssets ?? initialMediaAssets
-
-        _title = State(initialValue: book?.title ?? "")
-        _subtitle = State(initialValue: book?.details.subtitle ?? "")
-        _notes = State(initialValue: book?.notes ?? "")
-        _selectedAcquiredYearOption = State(
-            initialValue: book?.acquiredYear.map(String.init) ?? String(localized: "common.none")
-        )
-        _condition = State(initialValue: book?.condition ?? .good)
-        _acquisitionMethod = State(initialValue: book?.acquisitionMethod ?? .bought)
-        _tags = State(initialValue: book?.tags ?? [])
-        _mediaAssets = State(initialValue: initialMedia)
-        _coverImage = State(
-            initialValue: book?.details.coverImage?.with(
-                displayName: String(localized: "editor.media.cover")
+        _editorState = State(
+            initialValue: BookEditorState(
+                book: book,
+                initialMediaAssets: initialMediaAssets
             )
         )
-        _languageCode = State(initialValue: book?.details.languageCode ?? "")
-        _genre = State(initialValue: book?.details.genre ?? "")
-        _pageCount = State(initialValue: book?.details.pageCount.map(String.init) ?? "")
-        _selectedPublicationYearOption = State(
-            initialValue: book?.details.publicationYear.map(String.init) ?? String(localized: "common.none")
-        )
-        _selectedSeries = State(initialValue: book?.details.series)
-        _volumeNumber = State(initialValue: book?.details.volumeNumber.map(String.init) ?? "")
-        _selectedPublisher = State(initialValue: book?.details.publisher)
-        _contributors = State(
-            initialValue: (book?.details.contributors ?? []).sorted {
-                if $0.order != $1.order { return $0.order < $1.order }
-                return $0.person.sortName.localizedCaseInsensitiveCompare($1.person.sortName) == .orderedAscending
-            }
-        )
-        _identifiers = State(initialValue: book?.details.identifiers ?? [])
     }
 
     var body: some View {
@@ -261,7 +161,7 @@ struct BookEditorView: View {
                                     suggestedValue: suggestion.value,
                                     confidence: suggestion.confidence,
                                     onAccept: {
-                                        title = suggestion.value
+                                        editorState.title = suggestion.value
                                         photoAnalysis.dismiss(.title)
                                     }
                                 )
@@ -313,7 +213,7 @@ struct BookEditorView: View {
                                     suggestedValue: String(suggestion.value),
                                     confidence: suggestion.confidence,
                                     onAccept: {
-                                        selectedPublicationYearOption = String(suggestion.value)
+                                        editorState.selectedPublicationYearOption = String(suggestion.value)
                                         photoAnalysis.dismiss(.publicationYear)
                                     }
                                 )
@@ -325,7 +225,7 @@ struct BookEditorView: View {
                                     suggestedValue: "\(bookLanguageDisplayName(for: suggestion.value)) (\(suggestion.value.uppercased()))",
                                     confidence: suggestion.confidence,
                                     onAccept: {
-                                        languageCode = suggestion.value
+                                        editorState.languageCode = suggestion.value
                                         photoAnalysis.dismiss(.languageCode)
                                     }
                                 )
@@ -349,7 +249,7 @@ struct BookEditorView: View {
                                     suggestedValue: String(suggestion.value),
                                     confidence: suggestion.confidence,
                                     onAccept: {
-                                        volumeNumber = String(suggestion.value)
+                                        editorState.volumeNumber = String(suggestion.value)
                                         photoAnalysis.dismiss(.volumeNumber)
                                     }
                                 )
@@ -359,7 +259,7 @@ struct BookEditorView: View {
                 }
 
                 Section(String(localized: "common.field.title")) {
-                    if !isTitleValid {
+                    if !editorState.isTitleValid {
                         Button {
                             isTitleFocused = true
                         } label: {
@@ -383,7 +283,7 @@ struct BookEditorView: View {
                                     beginManualTextEditing(in: .title)
                                 }
                         } else {
-                            TextField(String(localized: "common.field.title"), text: $title)
+                            TextField(String(localized: "common.field.title"), text: $editorState.title)
                                 .focused($isTitleFocused)
                         }
                     }
@@ -402,7 +302,7 @@ struct BookEditorView: View {
                                     beginManualTextEditing(in: .subtitle)
                                 }
                         } else {
-                            TextField("book.field.subtitle", text: $subtitle, axis: .vertical)
+                            TextField("book.field.subtitle", text: $editorState.subtitle, axis: .vertical)
                                 .focused($isSubtitleFocused)
                         }
                     }
@@ -415,10 +315,10 @@ struct BookEditorView: View {
                 }
 
                 BookContributorsEditorSubview(
-                    rowCount: contributors.count,
+                    rowCount: editorState.contributors.count,
                     onDelete: deleteContributors
                 ) { index in
-                    let contributor = contributors[index]
+                    let contributor = editorState.contributors[index]
 
                     VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
                         BookContributorEditorRow(
@@ -452,13 +352,13 @@ struct BookEditorView: View {
                 Section("series.title") {
                     VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
                         BookSeriesPickerField(
-                            selection: $selectedSeries,
-                            series: availableSeries,
+                            selection: $editorState.selectedSeries,
+                            series: referenceResolver.availableSeries,
                             collectionID: collection.id,
                             statusSystemImage: assignedReferenceStatusSystemImage(for: .field(.series)),
                             onCreate: { newSeries in
                                 catalogSeries.append(newSeries)
-                                selectedSeries = newSeries
+                                editorState.selectedSeries = newSeries
                             }
                         )
 
@@ -468,7 +368,7 @@ struct BookEditorView: View {
                         assignTextFragments(items, to: .field(.series))
                     }
 
-                    if selectedSeries != nil {
+                    if editorState.selectedSeries != nil {
                         volumeField
                     }
                 }
@@ -476,12 +376,12 @@ struct BookEditorView: View {
                 Section("publisher.title") {
                     VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
                         BookPublisherPickerField(
-                            selection: $selectedPublisher,
-                            publishers: availablePublishers,
+                            selection: $editorState.selectedPublisher,
+                            publishers: referenceResolver.availablePublishers,
                             statusSystemImage: assignedReferenceStatusSystemImage(for: .field(.publisher)),
                             onCreate: { newPublisher in
                                 catalogPublishers.append(newPublisher)
-                                selectedPublisher = newPublisher
+                                editorState.selectedPublisher = newPublisher
                             }
                         )
 
@@ -496,8 +396,8 @@ struct BookEditorView: View {
                     VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
                         YearPickerField(
                             title: String(localized: "book.field.publication_year"),
-                            selection: $selectedPublicationYearOption,
-                            options: publicationYearOptions
+                            selection: $editorState.selectedPublicationYearOption,
+                            options: editorState.publicationYearOptions
                         )
 
                         assignedTextFragments(for: .field(.publicationYear))
@@ -508,21 +408,21 @@ struct BookEditorView: View {
 
                     optionalPositiveIntegerField(
                         title: String(localized: "book.field.pages"),
-                        text: $pageCount
+                        text: $editorState.pageCount
                     )
 
-                    BookLanguagePickerField(languageCode: $languageCode)
+                    BookLanguagePickerField(languageCode: $editorState.languageCode)
 
                     LookupTextField(
                         title: String(localized: "book.field.genre"),
-                        value: $genre,
+                        value: $editorState.genre,
                         suggestions: genreSuggestions
                     )
                 }
 
                 Section("book.section.identifiers") {
-                    ForEach(identifiers.indices, id: \.self) { index in
-                        let identifier = identifiers[index]
+                    ForEach(editorState.identifiers.indices, id: \.self) { index in
+                        let identifier = editorState.identifiers[index]
 
                         Button {
                             editingIdentifierIndex = index
@@ -558,29 +458,29 @@ struct BookEditorView: View {
                 Section(String(localized: "item.detail.section.collection_info")) {
                     YearPickerField(
                         title: String(localized: "item.detail.acquisition_year"),
-                        selection: $selectedAcquiredYearOption,
+                        selection: $editorState.selectedAcquiredYearOption,
                         options: acquiredYearOptions
                     )
 
                     EnumSelectionRow(
                         title: String(localized: "item.detail.acquisition"),
-                        selectedLabel: acquisitionMethod.displayName,
+                        selectedLabel: editorState.acquisitionMethod.displayName,
                         options: AcquisitionMethod.allCases,
-                        selection: $acquisitionMethod,
+                        selection: $editorState.acquisitionMethod,
                         optionTitle: \.displayName
                     )
 
                     EnumSelectionRow(
                         title: String(localized: "common.field.condition"),
-                        selectedLabel: condition.displayName,
+                        selectedLabel: editorState.condition.displayName,
                         options: ItemCondition.allCases,
-                        selection: $condition,
+                        selection: $editorState.condition,
                         optionTitle: \.displayName
                     )
                 }
 
                 Section(String(localized: "common.field.notes")) {
-                    TextField(String(localized: "common.field.notes"), text: $notes, axis: .vertical)
+                    TextField(String(localized: "common.field.notes"), text: $editorState.notes, axis: .vertical)
                         .lineLimit(4, reservesSpace: true)
 
                     VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.md) {
@@ -590,16 +490,16 @@ struct BookEditorView: View {
 
                         TagEditorSection(
                             tagInput: $tagInput,
-                            tags: $tags
+                            tags: $editorState.tags
                         )
                     }
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if textFragmentState.hasUnusedFragments {
+                if textAssignmentController.hasUnusedFragments {
                     TextFragmentBar(
-                        fragments: textFragmentState.fragments,
-                        usedFragmentIDs: textFragmentState.usedFragmentIDs
+                        fragments: textAssignmentController.fragments,
+                        usedFragmentIDs: textAssignmentController.usedFragmentIDs
                     )
                 }
             }
@@ -659,11 +559,11 @@ struct BookEditorView: View {
                 consumeInitialCoverPhotoIfNeeded()
             }
             .onChange(of: photoAnalysis.recognizedText) { _, recognizedText in
-                syncTextFragments(from: recognizedText)
+                textAssignmentController.sync(from: recognizedText)
             }
             .sheet(isPresented: $isPresentingContributorEditor) {
                 let contributor = editingContributorIndex.flatMap { index in
-                    contributors.indices.contains(index) ? contributors[index] : nil
+                    editorState.contributors.indices.contains(index) ? editorState.contributors[index] : nil
                 }
 
                 BookContributorEditorView(
@@ -672,13 +572,13 @@ struct BookEditorView: View {
                         : String(localized: "book_contributor.action.edit"),
                     role: contributor?.role ?? .author,
                     person: contributor?.person,
-                    people: availablePeople,
+                    people: referenceResolver.availablePeople,
                     onCreatePerson: { newPerson in
                         catalogPeople.append(newPerson)
                     },
                     validationMessage: { role, person in
                         guard let person else { return nil }
-                        let isDuplicate = contributors.enumerated().contains { index, existing in
+                        let isDuplicate = editorState.contributors.enumerated().contains { index, existing in
                             index != editingContributorIndex
                                 && existing.role == role
                                 && existing.person.id == person.id
@@ -691,7 +591,7 @@ struct BookEditorView: View {
                         saveContributor(
                             BookContributor(
                                 role: role,
-                                order: contributor?.order ?? contributors.count,
+                                order: contributor?.order ?? editorState.contributors.count,
                                 person: person
                             )
                         )
@@ -701,9 +601,9 @@ struct BookEditorView: View {
             .sheet(isPresented: $isPresentingIdentifierEditor) {
                 BookIdentifierEditorView(
                     identifier: editingIdentifierIndex.flatMap { index in
-                        identifiers.indices.contains(index) ? identifiers[index] : nil
+                        editorState.identifiers.indices.contains(index) ? editorState.identifiers[index] : nil
                     },
-                    existingIdentifiers: identifiers,
+                    existingIdentifiers: editorState.identifiers,
                     editingIndex: editingIdentifierIndex,
                     onSave: saveIdentifier
                 )
@@ -729,48 +629,24 @@ struct BookEditorView: View {
 
     private func assignedReferenceStatusSystemImage(for target: BookTextTarget) -> String? {
         guard let fragments = textAssignments[target], !fragments.isEmpty else { return nil }
-        return referenceResolutionStatus(for: target)?.systemImage
-    }
-
-    private func referenceResolutionStatus(for target: BookTextTarget) -> BookReferenceResolutionStatus? {
-        switch target {
-        case .field(.publisher):
-            guard let selectedPublisher else { return nil }
-            return catalogPublishers.contains(where: { $0.id == selectedPublisher.id }) ? .existing : .new
-        case .field(.series):
-            guard let selectedSeries else { return nil }
-            return catalogSeries.contains(where: { $0.id == selectedSeries.id }) ? .existing : .new
-        case let .author(index):
-            guard contributors.indices.contains(index), contributors[index].role == .author else { return nil }
-            let person = contributors[index].person
-            return catalogPeople.contains(where: { $0.id == person.id }) ? .existing : .new
-        default:
-            return nil
-        }
+        return referenceResolver.status(for: target)?.systemImage
     }
 
     private var canSave: Bool {
-        isTitleValid
-            && isOptionalPositiveIntegerValid(pageCount)
-            && isVolumeValid
-            && !isGeneratingCoverImage
-    }
-
-    private var isTitleValid: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        editorState.canSave(isGeneratingCoverImage: isGeneratingCoverImage)
     }
 
     private var volumeField: some View {
         VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
             LabeledContent("book.field.volume") {
-                numericTextField($volumeNumber)
+                numericTextField($editorState.volumeNumber)
             }
 
             assignedTextFragments(for: .field(.volume))
 
-            if !isVolumeValid {
+            if !editorState.isVolumeValid {
                 Label(
-                    volumeValidationMessage,
+                    editorState.volumeValidationMessage,
                     systemImage: "exclamationmark.circle.fill"
                 )
                 .font(.footnote)
@@ -782,31 +658,6 @@ struct BookEditorView: View {
         }
     }
 
-    private var isVolumeValid: Bool {
-        guard let selectedSeries else { return true }
-
-        let trimmed = volumeNumber.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return true }
-        guard let number = Int(trimmed), number > 0 else { return false }
-
-        if let totalBookCount = selectedSeries.totalBookCount {
-            return number <= totalBookCount
-        }
-
-        return true
-    }
-
-    private var volumeValidationMessage: String {
-        if let totalBookCount = selectedSeries?.totalBookCount {
-            return String.localizedStringWithFormat(
-                String(localized: "common.validation.whole_number_range_1_to_max"),
-                totalBookCount
-            )
-        }
-
-        return String(localized: "book.validation.positive_whole_number")
-    }
-
     private func optionalPositiveIntegerField(
         title: String,
         text: Binding<String>
@@ -816,7 +667,7 @@ struct BookEditorView: View {
                 numericTextField(text)
             }
 
-            if !isOptionalPositiveIntegerValid(text.wrappedValue) {
+            if !editorState.isOptionalPositiveIntegerValid(text.wrappedValue) {
                 Label(
                     "book.validation.positive_whole_number",
                     systemImage: "exclamationmark.circle.fill"
@@ -839,17 +690,10 @@ struct BookEditorView: View {
 #endif
     }
 
-    private func isOptionalPositiveIntegerValid(_ value: String) -> Bool {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return true }
-        guard let number = Int(trimmed) else { return false }
-        return number > 0
-    }
-
     @MainActor
     private func handlePhotoAdded(_ image: UIImage) {
-        guard coverImage == nil, !isGeneratingCoverImage else { return }
-        guard let sourceAsset = mediaAssets
+        guard editorState.coverImage == nil, !isGeneratingCoverImage else { return }
+        guard let sourceAsset = editorState.mediaAssets
             .filter({ $0.kind == .photo })
             .max(by: { $0.sortOrder < $1.sortOrder }) else {
             return
@@ -861,7 +705,7 @@ struct BookEditorView: View {
     @MainActor
     private func consumeInitialCoverPhotoIfNeeded() {
         guard existingBook == nil,
-              coverImage == nil,
+              editorState.coverImage == nil,
               !isGeneratingCoverImage,
               let sourceAsset = firstPhotoAsset,
               let sourceData = sourceAsset.originalData,
@@ -874,7 +718,7 @@ struct BookEditorView: View {
 
     @MainActor
     private func consumePhotoAsCover(_ image: UIImage, sourceAsset: MediaAsset) {
-        mediaAssets = mediaAssets
+        editorState.mediaAssets = editorState.mediaAssets
             .filter { $0.id != sourceAsset.id }
             .enumerated()
             .map { index, asset in
@@ -892,7 +736,7 @@ struct BookEditorView: View {
                 return
             }
 
-            coverImage = extractedCover.with(
+            editorState.coverImage = extractedCover.with(
                 displayName: String(localized: "editor.media.cover")
             )
         }
@@ -907,74 +751,29 @@ struct BookEditorView: View {
         photoAnalysis.analyze(image: initialAnalysisImage)
     }
 
-    private func syncTextFragments(from recognizedText: [RecognizedTextFeature]) {
-        let sources = recognizedText.enumerated().map { index, feature in
-            TextFragmentSource(
-                text: feature.text,
-                confidence: feature.confidence,
-                boundingBox: feature.boundingBox,
-                sourceIndex: index
-            )
-        }
-        textFragmentState.sync(from: sources)
-    }
-
     @discardableResult
     private func assignTextFragments(
         _ droppedFragments: [TextFragmentTransfer],
         to target: BookTextTarget
     ) -> Bool {
-        var newFragments = textFragmentState.matching(droppedFragments)
-        guard !newFragments.isEmpty else { return false }
-
-        switch target {
-        case .field(.volume):
-            newFragments = newFragments.compactMap(prepareVolumeFragment)
-            guard !newFragments.isEmpty else { return false }
-        case .field(.publicationYear):
-            newFragments = newFragments.compactMap(preparePublicationYearFragment)
-            guard !newFragments.isEmpty else { return false }
-        default:
-            break
+        guard let preparedAssignment = textAssignmentController.prepareAssignment(
+            droppedFragments,
+            to: target
+        ), applyTextAssignment(preparedAssignment.assignment, to: target) else {
+            return false
         }
 
-        let assigned = textFragmentState.mergedAssignment(adding: newFragments, to: target)
-        let assignment = BookTextAssignmentRules.makeAssignment(from: assigned)
-        guard applyTextAssignment(assignment, to: target) else { return false }
-
-        textFragmentState.setAssignment(assigned, for: target)
+        textAssignmentController.commit(preparedAssignment)
         return true
     }
 
-    private func prepareVolumeFragment(_ fragment: TextFragment) -> TextFragment? {
-        guard let extraction = BookTextAssignmentRules.volumeExtraction(in: fragment.text) else { return nil }
-        return textFragmentState.split(
-            fragment,
-            extracting: extraction.range,
-            replacementText: extraction.replacementText
-        )
-    }
-
-    private func preparePublicationYearFragment(_ fragment: TextFragment) -> TextFragment? {
-        guard let extraction = BookTextAssignmentRules.publicationYearExtraction(in: fragment.text) else { return nil }
-        return textFragmentState.split(
-            fragment,
-            extracting: extraction.range,
-            replacementText: extraction.replacementText
-        )
-    }
-
     private func removeTextFragment(_ fragment: TextFragment, from target: BookTextTarget) {
-        let assignedFragments = textFragmentState.remove(fragment, from: target)
-
-        if assignedFragments.isEmpty,
-           case let .author(index) = target,
-           authorBaseNames[index] == "" {
+        switch textAssignmentController.remove(fragment, from: target) {
+        case let .apply(assignment):
+            _ = applyTextAssignment(assignment, to: target)
+        case let .deleteAuthor(index):
             deleteContributors(at: IndexSet(integer: index))
-            return
         }
-
-        _ = applyTextAssignment(BookTextAssignmentRules.makeAssignment(from: assignedFragments), to: target)
     }
 
     @discardableResult
@@ -986,58 +785,59 @@ struct BookEditorView: View {
         case let .field(field):
             switch field {
             case .title:
-                title = assignment.text
+                editorState.title = assignment.text
                 return true
             case .subtitle:
-                subtitle = assignment.text
+                editorState.subtitle = assignment.text
                 return true
             case .publicationYear:
                 guard !assignment.text.isEmpty else {
-                    selectedPublicationYearOption = String(localized: "common.none")
+                    editorState.selectedPublicationYearOption = String(localized: "common.none")
                     return true
                 }
                 guard let year = Int(assignment.text) else { return false }
-                selectedPublicationYearOption = String(year)
+                editorState.selectedPublicationYearOption = String(year)
                 return true
             case .publisher:
                 guard !assignment.text.isEmpty else {
-                    selectedPublisher = nil
+                    editorState.selectedPublisher = nil
                     return true
                 }
-                guard let publisher = resolvePublisher(named: assignment.text) else { return false }
-                selectedPublisher = publisher
+                guard let publisher = referenceResolver.resolvePublisher(named: assignment.text) else { return false }
+                editorState.selectedPublisher = publisher
                 return true
             case .series:
                 guard !assignment.text.isEmpty else {
-                    selectedSeries = nil
+                    editorState.selectedSeries = nil
                     return true
                 }
-                guard let series = resolveSeries(named: assignment.text) else { return false }
-                selectedSeries = series
+                guard let series = referenceResolver.resolveSeries(named: assignment.text) else { return false }
+                editorState.selectedSeries = series
                 return true
             case .volume:
                 guard !assignment.text.isEmpty else {
-                    volumeNumber = ""
+                    editorState.volumeNumber = ""
                     return true
                 }
                 guard let number = BookTextAssignmentRules.firstPositiveInteger(in: assignment.text) else { return false }
-                volumeNumber = String(number)
+                editorState.volumeNumber = String(number)
                 return true
             }
 
         case let .author(index):
-            guard contributors.indices.contains(index), contributors[index].role == .author else {
+            guard editorState.contributors.indices.contains(index),
+                  editorState.contributors[index].role == .author else {
                 return false
             }
 
-            let baseName = authorBaseNames[index] ?? ""
+            let baseName = textAssignmentController.authorBaseName(for: index) ?? ""
             let name = [baseName, assignment.text]
                 .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 .joined(separator: " ")
-            guard let person = resolvePerson(named: name) else { return false }
+            guard let person = referenceResolver.resolvePerson(named: name) else { return false }
 
-            let contributor = contributors[index]
-            contributors[index] = BookContributor(
+            let contributor = editorState.contributors[index]
+            editorState.contributors[index] = BookContributor(
                 role: contributor.role,
                 order: contributor.order,
                 person: person
@@ -1050,7 +850,7 @@ struct BookEditorView: View {
         guard field == .title || field == .subtitle else { return }
 
         let target = BookTextTarget.field(field)
-        guard !textFragmentState.consumeAssignment(for: target).isEmpty else { return }
+        guard textAssignmentController.consumeAssignment(for: target) else { return }
 
         switch field {
         case .title:
@@ -1064,21 +864,16 @@ struct BookEditorView: View {
 
     @discardableResult
     private func createAuthor(from droppedFragments: [TextFragmentTransfer]) -> Bool {
-        var fragments = textFragmentState.matching(droppedFragments)
+        var fragments = textAssignmentController.matching(droppedFragments)
         guard !fragments.isEmpty else { return false }
         fragments.sort(by: TextFragment.readingOrder)
 
-        let authorIndices = textAssignments.keys.compactMap { target -> Int? in
-            guard case let .author(index) = target else { return nil }
-            return index
-        }.sorted()
-
-        for index in authorIndices {
+        for index in textAssignmentController.authorIndices {
             let target = BookTextTarget.author(index)
-            guard contributors.indices.contains(index),
-                  contributors[index].role == .author,
-                  authorBaseNames[index] == "",
-                  let existingFragments = textAssignments[target] else { continue }
+            guard editorState.contributors.indices.contains(index),
+                  editorState.contributors[index].role == .author,
+                  textAssignmentController.authorBaseName(for: index) == "",
+                  let existingFragments = textAssignmentController.assignment(for: target) else { continue }
 
             var combinedFragments = existingFragments
             for fragment in fragments where !combinedFragments.contains(fragment) {
@@ -1087,13 +882,13 @@ struct BookEditorView: View {
             combinedFragments.sort(by: TextFragment.readingOrder)
 
             let combinedName = combinedFragments.map(\.text).joined(separator: " ")
-            guard let existingPerson = uniqueMatchingPerson(named: combinedName, in: catalogPeople) else {
+            guard let existingPerson = referenceResolver.existingCatalogPerson(named: combinedName) else {
                 continue
             }
 
-            let contributor = contributors[index]
-            textFragmentState.setAssignment(combinedFragments, for: target)
-            contributors[index] = BookContributor(
+            let contributor = editorState.contributors[index]
+            textAssignmentController.setAssignment(combinedFragments, for: target)
+            editorState.contributors[index] = BookContributor(
                 role: contributor.role,
                 order: contributor.order,
                 person: existingPerson
@@ -1102,10 +897,10 @@ struct BookEditorView: View {
         }
 
         let name = fragments.map(\.text).joined(separator: " ")
-        guard let person = resolvePerson(named: name) else { return false }
+        guard let person = referenceResolver.resolvePerson(named: name) else { return false }
 
-        let index = contributors.count
-        contributors.append(
+        let index = editorState.contributors.count
+        editorState.contributors.append(
             BookContributor(
                 role: .author,
                 order: index,
@@ -1113,8 +908,8 @@ struct BookEditorView: View {
             )
         )
         normalizeContributorOrder()
-        textFragmentState.setAssignment(fragments, for: .author(index))
-        authorBaseNames[index] = ""
+        textAssignmentController.setAssignment(fragments, for: .author(index))
+        textAssignmentController.setAuthorBaseName("", for: index)
         return true
     }
 
@@ -1123,149 +918,45 @@ struct BookEditorView: View {
         _ droppedFragments: [TextFragmentTransfer],
         toContributorAt index: Int
     ) -> Bool {
-        guard contributors.indices.contains(index), contributors[index].role == .author else {
+        guard editorState.contributors.indices.contains(index),
+              editorState.contributors[index].role == .author else {
             return false
         }
-
-        let newFragments = textFragmentState.matching(droppedFragments)
-        guard !newFragments.isEmpty else { return false }
 
         let target = BookTextTarget.author(index)
-        if authorBaseNames[index] == nil {
-            authorBaseNames[index] = contributors[index].person.displayName
+        if textAssignmentController.authorBaseName(for: index) == nil {
+            textAssignmentController.setAuthorBaseName(
+                editorState.contributors[index].person.displayName,
+                for: index
+            )
         }
 
-        let assigned = textFragmentState.mergedAssignment(adding: newFragments, to: target)
-        guard applyTextAssignment(BookTextAssignmentRules.makeAssignment(from: assigned), to: target) else {
+        guard let preparedAssignment = textAssignmentController.prepareAssignment(
+            droppedFragments,
+            to: target
+        ), applyTextAssignment(preparedAssignment.assignment, to: target) else {
             return false
         }
 
-        textFragmentState.setAssignment(assigned, for: target)
+        textAssignmentController.commit(preparedAssignment)
         return true
     }
 
-    private func resolvePerson(named rawName: String) -> Person? {
-        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return nil }
-
-        if let existing = uniqueMatchingPerson(named: name, in: availablePeople) {
-            return existing
-        }
-
-        return Person(
-            id: UUID(),
-            givenName: name,
-            birthYear: nil,
-            deathYear: nil,
-            biography: nil,
-            birthPlace: nil,
-            deathPlace: nil,
-            photos: []
-        )
-    }
-
-    private func uniqueMatchingPerson(named rawName: String, in people: [Person]) -> Person? {
-        let matches = people.compactMap { person -> (person: Person, score: Int)? in
-            guard let score = personReferenceMatchScore(for: rawName, person: person) else { return nil }
-            return (person, score)
-        }
-
-        guard let bestScore = matches.map({ $0.score }).max() else { return nil }
-        let bestMatches = matches.filter { $0.score == bestScore }
-        guard bestMatches.count == 1 else { return nil }
-        return bestMatches[0].person
-    }
-
-    private func personReferenceMatchScore(for rawName: String, person: Person) -> Int? {
-        let rawKey = normalizedReferenceKey(rawName)
-        guard !rawKey.isEmpty else { return nil }
-
-        if normalizedReferenceKey(person.displayName) == rawKey {
-            return 300
-        }
-
-        let queryTokens = normalizedPersonNameTokens(rawName)
-        let personNameParts: [String?] = [person.givenName, person.middleName, person.familyName]
-        let personTokens = personNameParts
-            .compactMap { $0 }
-            .flatMap(normalizedPersonNameTokens)
-
-        guard queryTokens.count >= 2,
-              queryTokens.count <= personTokens.count else { return nil }
-
-        if queryTokens.count == personTokens.count,
-           queryTokens.sorted() == personTokens.sorted() {
-            return 200
-        }
-
-        guard let fullTokenMatchCount = personNameFullTokenMatchCount(
-            queryTokens,
-            against: personTokens
-        ), fullTokenMatchCount > 0 else {
-            return nil
-        }
-
-        return 100 + fullTokenMatchCount
-    }
-
-    private func normalizedPersonNameTokens(_ value: String) -> [String] {
-        value
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
-            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
-            .map(String.init)
-    }
-
-    private func personNameFullTokenMatchCount(
-        _ queryTokens: [String],
-        against personTokens: [String]
-    ) -> Int? {
-        var remainingTokens = personTokens
-        var fullTokenMatchCount = 0
-
-        let orderedQueryTokens = queryTokens.sorted { lhs, rhs in
-            let lhsIsInitial = lhs.count == 1
-            let rhsIsInitial = rhs.count == 1
-            if lhsIsInitial != rhsIsInitial {
-                return !lhsIsInitial
-            }
-            return lhs.count > rhs.count
-        }
-
-        for queryToken in orderedQueryTokens {
-            if let index = remainingTokens.firstIndex(of: queryToken) {
-                if queryToken.count > 1 {
-                    fullTokenMatchCount += 1
-                }
-                remainingTokens.remove(at: index)
-                continue
-            }
-
-            guard queryToken.count == 1,
-                  let initial = queryToken.first,
-                  let index = remainingTokens.firstIndex(where: { $0.first == initial }) else {
-                return nil
-            }
-            remainingTokens.remove(at: index)
-        }
-
-        return fullTokenMatchCount
-    }
-
     private func applyAuthorSuggestions(_ suggestions: [SuggestedFieldValue<String>]) {
-        let originalAuthorIndex = contributors.firstIndex { $0.role == .author } ?? contributors.count
+        let originalAuthorIndex = editorState.contributors.firstIndex { $0.role == .author }
+            ?? editorState.contributors.count
         var seen: Set<String> = []
         var authorPeople: [Person] = []
 
         for suggestion in suggestions {
             let name = suggestion.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            let key = normalizedReferenceKey(name)
+            let key = referenceResolver.normalizedKey(name)
             guard !name.isEmpty, seen.insert(key).inserted,
-                  let person = resolvePerson(named: name) else { continue }
+                  let person = referenceResolver.resolvePerson(named: name) else { continue }
             authorPeople.append(person)
         }
 
-        var updated = contributors.filter { $0.role != .author }
+        var updated = editorState.contributors.filter { $0.role != .author }
         let insertionIndex = min(originalAuthorIndex, updated.count)
         let newAuthors = authorPeople.enumerated().map { index, person in
             BookContributor(
@@ -1275,7 +966,7 @@ struct BookEditorView: View {
             )
         }
         updated.insert(contentsOf: newAuthors, at: insertionIndex)
-        contributors = updated.enumerated().map { index, contributor in
+        editorState.contributors = updated.enumerated().map { index, contributor in
             var normalized = contributor
             normalized.order = index
             return normalized
@@ -1286,106 +977,46 @@ struct BookEditorView: View {
         for suggestion in suggestions {
             let candidate = suggestion.value
             let candidateKey = bookIdentifierDuplicateKey(type: candidate.type, value: candidate.value)
-            let isDuplicate = identifiers.contains { existing in
+            let isDuplicate = editorState.identifiers.contains { existing in
                 existing.type == candidate.type
                     && bookIdentifierDuplicateKey(type: existing.type, value: existing.value) == candidateKey
             }
 
             if !isDuplicate {
-                identifiers.append(candidate)
+                editorState.identifiers.append(candidate)
             }
         }
     }
 
     private func applyPublisherSuggestion(_ suggestion: SuggestedFieldValue<String>) {
-        selectedPublisher = resolvePublisher(named: suggestion.value)
-    }
-
-    private func resolvePublisher(named rawName: String) -> Publisher? {
-        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return nil }
-
-        let key = normalizedReferenceKey(name)
-        if let existing = catalogPublishers.first(where: { normalizedReferenceKey($0.name) == key }) {
-            return existing
-        }
-
-        return Publisher(
-            id: UUID(),
-            name: name,
-            location: nil
-        )
+        editorState.selectedPublisher = referenceResolver.resolvePublisher(named: suggestion.value)
     }
 
     private func applySeriesSuggestion(_ suggestion: SuggestedFieldValue<String>) {
-        selectedSeries = resolveSeries(named: suggestion.value)
-    }
-
-    private func resolveSeries(named rawName: String) -> BookSeries? {
-        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return nil }
-
-        let key = normalizedReferenceKey(name)
-        if let existing = catalogSeries.first(where: { normalizedReferenceKey($0.name) == key }) {
-            return existing
-        }
-
-        return BookSeries(
-            id: UUID(),
-            collectionID: collection.id,
-            name: name,
-            totalBookCount: nil,
-            publisher: nil
-        )
-    }
-
-    private func normalizedReferenceKey(_ value: String) -> String {
-        value
-            .split(whereSeparator: { $0.isWhitespace })
-            .joined(separator: " ")
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
+        editorState.selectedSeries = referenceResolver.resolveSeries(named: suggestion.value)
     }
 
     private func saveContributor(_ contributor: BookContributor) {
         if let editingContributorIndex,
-           contributors.indices.contains(editingContributorIndex) {
-            contributors[editingContributorIndex] = contributor
+           editorState.contributors.indices.contains(editingContributorIndex) {
+            editorState.contributors[editingContributorIndex] = contributor
         } else {
-            contributors.append(contributor)
+            editorState.contributors.append(contributor)
         }
         normalizeContributorOrder()
     }
 
     private func deleteContributors(at offsets: IndexSet) {
         let removedIndices = Set(offsets)
-        let survivingIndices = contributors.indices.filter { !removedIndices.contains($0) }
+        let survivingIndices = editorState.contributors.indices.filter { !removedIndices.contains($0) }
 
-        var remappedAssignments: [BookTextTarget: [TextFragment]] = [:]
-        for (target, fragments) in textAssignments {
-            if case .field = target {
-                remappedAssignments[target] = fragments
-            }
-        }
-
-        var remappedBaseNames: [Int: String] = [:]
-        for (newIndex, oldIndex) in survivingIndices.enumerated() {
-            if let fragments = textAssignments[.author(oldIndex)] {
-                remappedAssignments[.author(newIndex)] = fragments
-            }
-            if let baseName = authorBaseNames[oldIndex] {
-                remappedBaseNames[newIndex] = baseName
-            }
-        }
-
-        contributors.remove(atOffsets: offsets)
-        textFragmentState.assignments = remappedAssignments
-        authorBaseNames = remappedBaseNames
+        editorState.contributors.remove(atOffsets: offsets)
+        textAssignmentController.remapAuthors(survivingIndices: survivingIndices)
         normalizeContributorOrder()
     }
 
     private func normalizeContributorOrder() {
-        contributors = contributors.enumerated().map { index, contributor in
+        editorState.contributors = editorState.contributors.enumerated().map { index, contributor in
             var normalized = contributor
             normalized.order = index
             return normalized
@@ -1394,15 +1025,15 @@ struct BookEditorView: View {
 
     private func saveIdentifier(_ identifier: BookIdentifier) {
         if let editingIdentifierIndex,
-           identifiers.indices.contains(editingIdentifierIndex) {
-            identifiers[editingIdentifierIndex] = identifier
+           editorState.identifiers.indices.contains(editingIdentifierIndex) {
+            editorState.identifiers[editingIdentifierIndex] = identifier
         } else {
-            identifiers.append(identifier)
+            editorState.identifiers.append(identifier)
         }
     }
 
     private func deleteIdentifiers(at offsets: IndexSet) {
-        identifiers.remove(atOffsets: offsets)
+        editorState.identifiers.remove(atOffsets: offsets)
     }
 
     @MainActor
@@ -1421,72 +1052,20 @@ struct BookEditorView: View {
 
     private func saveBook() {
         guard canSave else {
-            if !isTitleValid {
+            if !editorState.isTitleValid {
                 isTitleFocused = true
             }
             return
         }
 
-        let itemID = editorItemID
-        let normalizedMediaAssets = mediaAssets.enumerated().map { index, asset in
-            asset.with(itemID: itemID, sortOrder: index)
-        }
-        let normalizedContributors = contributors.enumerated().map { index, contributor in
-            var normalized = contributor
-            normalized.order = index
-            return normalized
-        }
-        let existingItem = existingBook?.item
-
-        let book = BookRecord(
-            item: ItemRecord(
-                id: itemID,
-                collectionID: existingItem?.collectionID ?? collection.id,
-                kind: .books,
-                locationID: existingItem?.locationID,
-                originPlaceID: existingItem?.originPlaceID,
-                createdAt: existingItem?.createdAt ?? .now,
-                createdBy: existingItem?.createdBy ?? "me",
-                title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-                notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
-                acquiredYear: Int(selectedAcquiredYearOption),
-                condition: condition,
-                acquisitionMethod: acquisitionMethod,
-                isFavorite: existingItem?.isFavorite ?? false,
-                tags: tags,
-                originPlace: existingItem?.originPlace,
-                storageLocation: existingItem?.storageLocation,
-                storagePath: existingItem?.storagePath,
-                mediaAssets: normalizedMediaAssets
-            ),
-            details: BookDetails(
-                itemID: itemID,
-                subtitle: optionalString(subtitle),
-                languageCode: optionalString(languageCode)?.lowercased(),
-                genre: optionalString(genre),
-                pageCount: optionalPositiveInt(pageCount),
-                publicationYear: Int(selectedPublicationYearOption),
-                volumeNumber: selectedSeries == nil ? nil : optionalPositiveInt(volumeNumber),
-                coverImage: coverImage,
-                publisher: selectedPublisher,
-                contributors: normalizedContributors,
-                series: selectedSeries,
-                identifiers: identifiers
-            )
+        let book = editorState.makeBook(
+            itemID: editorItemID,
+            collectionID: collection.id,
+            existingBook: existingBook
         )
 
         onSave(book)
         dismiss()
-    }
-
-    private func optionalString(_ value: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func optionalPositiveInt(_ value: String) -> Int? {
-        guard let number = optionalString(value).flatMap(Int.init), number > 0 else { return nil }
-        return number
     }
 
     private static func normalizedGenreSuggestions(_ values: [String]) -> [String] {
@@ -1499,722 +1078,3 @@ struct BookEditorView: View {
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 }
-
-private struct BookSeriesPickerField: View {
-    @Binding var selection: BookSeries?
-    let series: [BookSeries]
-    let collectionID: UUID
-    let statusSystemImage: String?
-    let onCreate: (BookSeries) -> Void
-
-    @State private var isPresentingPicker = false
-
-    var body: some View {
-        Button {
-            isPresentingPicker = true
-        } label: {
-            HStack {
-                Text("series.title")
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                Text(selection?.name ?? String(localized: "common.none"))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-
-                if let statusSystemImage {
-                    Image(systemName: statusSystemImage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Image(systemName: "chevron.right")
-                    .font(CatalogTypography.chipLabel)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .buttonStyle(.plain)
-        .sheet(isPresented: $isPresentingPicker) {
-            BookSeriesSelectionView(
-                selection: $selection,
-                series: series,
-                collectionID: collectionID,
-                onCreate: onCreate
-            )
-        }
-    }
-}
-
-private struct BookSeriesSelectionView: View {
-    @Binding var selection: BookSeries?
-    let series: [BookSeries]
-    let collectionID: UUID
-    let onCreate: (BookSeries) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-
-    private var filteredSeries: [BookSeries] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return series }
-        return series.filter { $0.name.localizedCaseInsensitiveContains(query) }
-    }
-
-    private var newSeriesName: String? {
-        let candidate = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !candidate.isEmpty else { return nil }
-        guard !series.contains(where: { $0.name.caseInsensitiveCompare(candidate) == .orderedSame }) else {
-            return nil
-        }
-        return candidate
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if let newSeriesName {
-                    Button {
-                        let newSeries = BookSeries(
-                            id: UUID(),
-                            collectionID: collectionID,
-                            name: newSeriesName,
-                            totalBookCount: nil,
-                            publisher: nil
-                        )
-                        onCreate(newSeries)
-                        selection = newSeries
-                        dismiss()
-                    } label: {
-                        Label(
-                            String.localizedStringWithFormat(String(localized: "common.action.add_value"), newSeriesName),
-                            systemImage: "plus.circle.fill"
-                        )
-                    }
-                }
-
-                Button {
-                    selection = nil
-                    dismiss()
-                } label: {
-                    HStack {
-                        Text(String(localized: "common.none"))
-                            .foregroundStyle(.primary)
-
-                        Spacer()
-
-                        if selection == nil {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.tint)
-                        }
-                    }
-                }
-
-                ForEach(filteredSeries) { item in
-                    Button {
-                        selection = item
-                        dismiss()
-                    } label: {
-                        HStack(alignment: .firstTextBaseline) {
-                            VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
-                                Text(item.name)
-                                    .foregroundStyle(.primary)
-
-                                if let totalBookCount = item.totalBookCount {
-                                    Text(CollectionKind.bookCountLabel(for: totalBookCount))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-
-                            Spacer()
-
-                            if selection?.id == item.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("series.title")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "picker.search_or_add")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(String(localized: "common.cancel"))
-                }
-            }
-        }
-    }
-}
-
-private struct BookPublisherPickerField: View {
-    @Binding var selection: Publisher?
-    let publishers: [Publisher]
-    let statusSystemImage: String?
-    let onCreate: (Publisher) -> Void
-
-    @State private var isPresentingPicker = false
-
-    var body: some View {
-        Button {
-            isPresentingPicker = true
-        } label: {
-            HStack {
-                Text("publisher.title")
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                Text(selection?.name ?? String(localized: "common.none"))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-
-                if let statusSystemImage {
-                    Image(systemName: statusSystemImage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Image(systemName: "chevron.right")
-                    .font(CatalogTypography.chipLabel)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .buttonStyle(.plain)
-        .sheet(isPresented: $isPresentingPicker) {
-            BookPublisherSelectionView(
-                selection: $selection,
-                publishers: publishers,
-                onCreate: onCreate
-            )
-        }
-    }
-}
-
-private struct BookPublisherSelectionView: View {
-    @Binding var selection: Publisher?
-    let publishers: [Publisher]
-    let onCreate: (Publisher) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-
-    private var filteredPublishers: [Publisher] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return publishers }
-        return publishers.filter { $0.name.localizedCaseInsensitiveContains(query) }
-    }
-
-    private var newPublisherName: String? {
-        let candidate = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !candidate.isEmpty else { return nil }
-        guard !publishers.contains(where: { $0.name.caseInsensitiveCompare(candidate) == .orderedSame }) else {
-            return nil
-        }
-        return candidate
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if let newPublisherName {
-                    Button {
-                        let newPublisher = Publisher(
-                            id: UUID(),
-                            name: newPublisherName,
-                            location: nil
-                        )
-                        onCreate(newPublisher)
-                        selection = newPublisher
-                        dismiss()
-                    } label: {
-                        Label(
-                            String.localizedStringWithFormat(String(localized: "common.action.add_value"), newPublisherName),
-                            systemImage: "plus.circle.fill"
-                        )
-                    }
-                }
-
-                Button {
-                    selection = nil
-                    dismiss()
-                } label: {
-                    HStack {
-                        Text(String(localized: "common.none"))
-                            .foregroundStyle(.primary)
-
-                        Spacer()
-
-                        if selection == nil {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.tint)
-                        }
-                    }
-                }
-
-                ForEach(filteredPublishers) { publisher in
-                    Button {
-                        selection = publisher
-                        dismiss()
-                    } label: {
-                        HStack {
-                            Text(publisher.name)
-                                .foregroundStyle(.primary)
-
-                            Spacer()
-
-                            if selection?.id == publisher.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("publisher.title")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "picker.search_or_add")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(String(localized: "common.cancel"))
-                }
-            }
-        }
-    }
-}
-
-private struct BookIdentifierEditorView: View {
-    let identifier: BookIdentifier?
-    let existingIdentifiers: [BookIdentifier]
-    let editingIndex: Int?
-    let onSave: (BookIdentifier) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var type: BookIdentifierType
-    @State private var value: String
-
-    init(
-        identifier: BookIdentifier?,
-        existingIdentifiers: [BookIdentifier],
-        editingIndex: Int?,
-        onSave: @escaping (BookIdentifier) -> Void
-    ) {
-        self.identifier = identifier
-        self.existingIdentifiers = existingIdentifiers
-        self.editingIndex = editingIndex
-        self.onSave = onSave
-        _type = State(initialValue: identifier?.type ?? .isbn13)
-        _value = State(initialValue: identifier?.value ?? "")
-    }
-
-    private var trimmedValue: String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var isDuplicate: Bool {
-        guard !trimmedValue.isEmpty else { return false }
-        let key = bookIdentifierDuplicateKey(type: type, value: trimmedValue)
-
-        return existingIdentifiers.enumerated().contains { index, existing in
-            index != editingIndex
-                && existing.type == type
-                && bookIdentifierDuplicateKey(type: existing.type, value: existing.value) == key
-        }
-    }
-
-    private var validationMessage: String? {
-        guard !trimmedValue.isEmpty else {
-            return String(localized: "book_identifier.validation.value_required")
-        }
-
-        switch type {
-        case .isbn10:
-            guard isValidISBN10(trimmedValue) else {
-                return String(localized: "book_identifier.validation.isbn10_invalid")
-            }
-        case .isbn13:
-            guard isValidISBN13(trimmedValue) else {
-                return String(localized: "book_identifier.validation.isbn13_invalid")
-            }
-        case .sbn, .asin, .inventory, .other:
-            break
-        }
-
-        if isDuplicate {
-            return String(localized: "book_identifier.validation.duplicate")
-        }
-
-        return nil
-    }
-
-    private var canSave: Bool {
-        validationMessage == nil
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("book_identifier.title") {
-                    Picker("common.type", selection: $type) {
-                        ForEach(BookIdentifierType.allCases) { type in
-                            Text(type.bookEditorDisplayName).tag(type)
-                        }
-                    }
-
-                    TextField("book_identifier.field.value", text: $value)
-
-                    if let validationMessage {
-                        Label(
-                            validationMessage,
-                            systemImage: "exclamationmark.circle.fill"
-                        )
-                        .font(.footnote)
-                        .foregroundStyle(CatalogSemanticColors.destructive)
-                    }
-                }
-            }
-            .navigationTitle(identifier == nil ? String(localized: "book_identifier.action.add") : String(localized: "book_identifier.action.edit"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(String(localized: "common.cancel"))
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        onSave(BookIdentifier(type: type, value: trimmedValue))
-                        dismiss()
-                    } label: {
-                        Image(systemName: "checkmark")
-                    }
-                    .disabled(!canSave)
-                    .accessibilityLabel(String(localized: "common.save"))
-                }
-            }
-        }
-    }
-}
-
-private struct BookLanguagePickerField: View {
-    @Binding var languageCode: String
-    @State private var isPresentingPicker = false
-
-    private var selectedLabel: String {
-        guard !languageCode.isEmpty else { return String(localized: "common.none") }
-        return bookLanguageDisplayName(for: languageCode)
-    }
-
-    var body: some View {
-        Button {
-            isPresentingPicker = true
-        } label: {
-            HStack {
-                Text("book.field.language")
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                Text(selectedLabel)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-
-                Image(systemName: "chevron.right")
-                    .font(CatalogTypography.chipLabel)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .buttonStyle(.plain)
-        .sheet(isPresented: $isPresentingPicker) {
-            BookLanguagePickerView(languageCode: $languageCode)
-        }
-    }
-}
-
-private struct BookLanguagePickerView: View {
-    @Binding var languageCode: String
-    @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-
-    private struct LanguageOption: Identifiable {
-        let code: String
-        let name: String
-
-        var id: String { code }
-    }
-
-    private var languageOptions: [LanguageOption] {
-        Locale.LanguageCode.isoLanguageCodes
-            .map(\.identifier)
-            .map { code in
-                LanguageOption(
-                    code: code,
-                    name: bookLanguageDisplayName(for: code)
-                )
-            }
-            .sorted { lhs, rhs in
-                lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-            }
-    }
-
-    private var filteredOptions: [LanguageOption] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return languageOptions }
-
-        return languageOptions.filter {
-            $0.name.localizedCaseInsensitiveContains(query)
-                || $0.code.localizedCaseInsensitiveContains(query)
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Button {
-                    languageCode = ""
-                    dismiss()
-                } label: {
-                    HStack {
-                        Text(String(localized: "common.none"))
-                            .foregroundStyle(.primary)
-
-                        Spacer()
-
-                        if languageCode.isEmpty {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.tint)
-                        }
-                    }
-                }
-
-                ForEach(filteredOptions) { option in
-                    Button {
-                        languageCode = option.code
-                        dismiss()
-                    } label: {
-                        HStack {
-                            Text(option.name)
-                                .foregroundStyle(.primary)
-
-                            Spacer()
-
-                            Text(option.code.uppercased())
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            if languageCode.caseInsensitiveCompare(option.code) == .orderedSame {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("book.field.language")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "picker.search_languages")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(String(localized: "common.cancel"))
-                }
-            }
-        }
-    }
-}
-
-private struct LookupTextField: View {
-    let title: String
-    @Binding var value: String
-    let suggestions: [String]
-
-    @State private var isPresentingLookup = false
-
-    var body: some View {
-        HStack {
-            Text(title)
-
-            Spacer()
-
-            TextField("—", text: $value)
-                .multilineTextAlignment(.trailing)
-
-            Button {
-                isPresentingLookup = true
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(CatalogTypography.chipLabel)
-                    .foregroundStyle(.tertiary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(
-                String.localizedStringWithFormat(String(localized: "common.accessibility.choose_or_add"), title)
-            )
-        }
-        .sheet(isPresented: $isPresentingLookup) {
-            LookupSelectionView(
-                title: title,
-                selection: $value,
-                suggestions: suggestions
-            )
-        }
-    }
-}
-
-private struct LookupSelectionView: View {
-    let title: String
-    @Binding var selection: String
-    let suggestions: [String]
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-
-    private var filteredSuggestions: [String] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return suggestions }
-        return suggestions.filter { $0.localizedCaseInsensitiveContains(query) }
-    }
-
-    private var newValueCandidate: String? {
-        let candidate = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !candidate.isEmpty else { return nil }
-        guard !suggestions.contains(where: { $0.caseInsensitiveCompare(candidate) == .orderedSame }) else {
-            return nil
-        }
-        return candidate
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if let newValueCandidate {
-                    Button {
-                        selection = newValueCandidate
-                        dismiss()
-                    } label: {
-                        Label(
-                            String.localizedStringWithFormat(String(localized: "common.action.add_value"), newValueCandidate),
-                            systemImage: "plus.circle.fill"
-                        )
-                    }
-                }
-
-                ForEach(filteredSuggestions, id: \.self) { suggestion in
-                    Button {
-                        selection = suggestion
-                        dismiss()
-                    } label: {
-                        HStack {
-                            Text(suggestion)
-                                .foregroundStyle(.primary)
-
-                            Spacer()
-
-                            if suggestion.caseInsensitiveCompare(selection) == .orderedSame {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "picker.search_or_add")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(String(localized: "common.cancel"))
-                }
-            }
-        }
-    }
-}
-
-private extension BookIdentifierType {
-    var bookEditorDisplayName: String {
-        switch self {
-        case .isbn10: "ISBN-10"
-        case .isbn13: "ISBN-13"
-        case .sbn: "SBN"
-        case .asin: "ASIN"
-        case .inventory: String(localized: "book.field.inventory")
-        case .other: String(localized: "common.other")
-        }
-    }
-}
-
-private func compactBookIdentifier(_ value: String) -> String {
-    value.filter { $0.isLetter || $0.isNumber }.uppercased()
-}
-
-private func bookIdentifierDuplicateKey(type: BookIdentifierType, value: String) -> String {
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-
-    switch type {
-    case .isbn10, .isbn13, .sbn:
-        return compactBookIdentifier(trimmed)
-    case .asin:
-        return trimmed.uppercased()
-    case .inventory, .other:
-        return trimmed.folding(
-            options: [.caseInsensitive, .diacriticInsensitive],
-            locale: .current
-        )
-    }
-}
-
-private func isValidISBN10(_ value: String) -> Bool {
-    let characters = Array(compactBookIdentifier(value))
-    guard characters.count == 10 else { return false }
-    guard characters.dropLast().allSatisfy(\.isNumber), let last = characters.last else { return false }
-    return last.isNumber || last == "X"
-}
-
-private func isValidISBN13(_ value: String) -> Bool {
-    let characters = Array(compactBookIdentifier(value))
-    return characters.count == 13 && characters.allSatisfy(\.isNumber)
-}
-
-private func bookLanguageDisplayName(for code: String) -> String {
-    BookLanguageFormatter.displayName(for: code)
-}
-
-#if DEBUG
-#Preview {
-    let container = PreviewContainer.makeBooksMinimal()
-    let repository = CoreDataCatalogRepository(
-        context: container.viewContext,
-        persistentContainer: nil
-    )
-    let snapshot = CatalogSnapshot.load(from: container.viewContext)
-
-    if let collection = snapshot.collections
-        .compactMap({ snapshot.collectionSummary(id: $0.id) })
-        .first(where: { $0.kind == .books }) {
-        let book = snapshot.bookRecords.first { $0.item.collectionID == collection.id }
-
-        BookEditorView(
-            collection: collection,
-            book: book
-        ) { updatedBook in
-            repository.saveBookRecord(updatedBook)
-        }
-        .environment(\.managedObjectContext, container.viewContext)
-    }
-}
-#endif
