@@ -17,7 +17,7 @@ struct BookEditorView: View {
     @FocusState private var isTitleFocused: Bool
     @FocusState private var isSubtitleFocused: Bool
 
-    @State var editorState: BookEditorState
+    @State private var editorState: BookEditorState
     @State private var tagInput = ""
     @State private var isGeneratingCoverImage = false
     @State private var isPresentingCoverCaptureFailure = false
