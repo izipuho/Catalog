@@ -27,7 +27,6 @@ struct PublisherDetailView: View {
     let series: [BookSeries]
     let allBookCount: Int
     let allSeriesCount: Int
-    let places: [Place]
     let repository: any AppRepository
     let canEditCollection: Bool
     let accentColor: Color
@@ -47,7 +46,6 @@ struct PublisherDetailView: View {
         series: [BookSeries],
         allBookCount: Int,
         allSeriesCount: Int,
-        places: [Place],
         repository: any AppRepository,
         canEditCollection: Bool,
         accentColor: Color,
@@ -60,7 +58,6 @@ struct PublisherDetailView: View {
         self.series = series
         self.allBookCount = allBookCount
         self.allSeriesCount = allSeriesCount
-        self.places = places
         self.repository = repository
         self.canEditCollection = canEditCollection
         self.accentColor = accentColor
@@ -173,7 +170,6 @@ struct PublisherDetailView: View {
         .sheet(isPresented: $isPresentingEditor) {
             PublisherEditorView(
                 publisher: publisher,
-                places: places,
                 bookCount: allBookCount,
                 seriesCount: allSeriesCount,
                 onDelete: {
@@ -195,16 +191,8 @@ struct PublisherDetailView: View {
             HStack(alignment: .center, spacing: CatalogMetrics.Spacing.md) {
                 publisherMark
 
-                VStack(alignment: .leading, spacing: CatalogMetrics.Spacing.xs) {
-                    Text(publisher.name)
-                        .font(CatalogTypography.cardTitle)
-
-                    if let location = publisher.location {
-                        Text(location.displayName)
-                            .font(CatalogTypography.cardSubtitle)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Text(publisher.name)
+                    .font(CatalogTypography.cardTitle)
             }
 
             Divider()
@@ -338,7 +326,6 @@ struct PublisherDetailView: View {
                 },
                 allBookCount: snapshot.bookRecords.filter { $0.details.publisher?.id == publisher.id }.count,
                 allSeriesCount: snapshot.bookSeries.filter { $0.publisher?.id == publisher.id }.count,
-                places: snapshot.places,
                 repository: repository,
                 canEditCollection: true,
                 accentColor: collection.backgroundStyle.accentColor,

@@ -56,7 +56,6 @@ struct PublishersView: View {
             .filter { publisher in
                 query.isEmpty
                     || publisher.name.localizedCaseInsensitiveContains(query)
-                    || (publisher.location?.displayName.localizedCaseInsensitiveContains(query) ?? false)
             }
             .sorted { lhs, rhs in
                 let comparison = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
@@ -108,7 +107,6 @@ struct PublishersView: View {
                 series: seriesForPublisher(publisher),
                 allBookCount: allBooks.filter { $0.details.publisher?.id == publisher.id }.count,
                 allSeriesCount: allSeries.filter { $0.publisher?.id == publisher.id }.count,
-                places: catalogSnapshot?.places ?? [],
                 repository: repository,
                 canEditCollection: canEditCollection,
                 accentColor: collection.backgroundStyle.accentColor,
@@ -205,13 +203,6 @@ private struct PublisherCard: View {
                 Text(publisher.name)
                     .font(CatalogTypography.cardTitle)
 
-                if let location = publisher.location {
-                    Text(location.displayName)
-                        .font(CatalogTypography.cardSubtitle)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-
                 Text(supportingText)
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(.secondary)
@@ -258,7 +249,6 @@ private struct PublisherCard: View {
 /// Displays the editor used to create or update a publisher.
 struct PublisherEditorView: View {
     private let existingPublisher: Publisher?
-    private let places: [Place]
     private let bookCount: Int
     private let seriesCount: Int
     private let onDelete: (() -> Void)?
@@ -267,7 +257,6 @@ struct PublisherEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isNameFocused: Bool
     @State private var name: String
-    @State private var selectedLocation: Place?
     @State private var logoAssets: [MediaAsset]
     @State private var isConfirmingDelete = false
 
@@ -275,30 +264,23 @@ struct PublisherEditorView: View {
 
     init(
         publisher: Publisher?,
-        places: [Place],
         bookCount: Int = 0,
         seriesCount: Int = 0,
         onDelete: (() -> Void)? = nil,
         onSave: @escaping (Publisher) -> Void
     ) {
         self.existingPublisher = publisher
-        self.places = places
         self.bookCount = bookCount
         self.seriesCount = seriesCount
         self.onDelete = onDelete
         self.onSave = onSave
         self.editorPublisherID = publisher?.id ?? UUID()
         _name = State(initialValue: publisher?.name ?? "")
-        _selectedLocation = State(initialValue: publisher?.location)
         _logoAssets = State(initialValue: publisher?.logo.map { [$0] } ?? [])
     }
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var selectedLocationLabel: String {
-        selectedLocation?.displayName ?? String(localized: "common.none")
     }
 
     var body: some View {
@@ -323,13 +305,6 @@ struct PublisherEditorView: View {
                 Section {
                     TextField("common.name", text: $name)
                         .focused($isNameFocused)
-
-                    PlacePickerField(
-                        title: String(localized: "common.location"),
-                        selectedLabel: selectedLocationLabel,
-                        places: places,
-                        selectedPlace: $selectedLocation
-                    )
                 }
 
                 if existingPublisher != nil, onDelete != nil {
@@ -407,7 +382,6 @@ struct PublisherEditorView: View {
         let publisher = Publisher(
             id: existingPublisher?.id ?? editorPublisherID,
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            location: selectedLocation,
             logo: logoAssets.first?.with(sortOrder: 0)
         )
 
