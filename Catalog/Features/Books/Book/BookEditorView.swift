@@ -48,49 +48,28 @@ struct BookEditorView: View {
         Self.normalizedGenreSuggestions(initialGenreSuggestions + catalogGenreSuggestions)
     }
 
-    private var availableSeries: [BookSeries] {
-        var uniqueByID = Dictionary(catalogSeries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        if let selectedSeries {
-            uniqueByID[selectedSeries.id] = selectedSeries
-        }
+    private var referenceResolver: BookReferenceResolver {
+        BookReferenceResolver(
+            collectionID: collection.id,
+            catalogSeries: catalogSeries,
+            catalogPublishers: catalogPublishers,
+            catalogPeople: catalogPeople,
+            contributors: contributors,
+            selectedSeries: selectedSeries,
+            selectedPublisher: selectedPublisher
+        )
+    }
 
-        return uniqueByID.values.sorted {
-            let comparison = $0.name.localizedCaseInsensitiveCompare($1.name)
-            if comparison != .orderedSame {
-                return comparison == .orderedAscending
-            }
-            return $0.id.uuidString < $1.id.uuidString
-        }
+    private var availableSeries: [BookSeries] {
+        referenceResolver.availableSeries
     }
 
     private var availablePublishers: [Publisher] {
-        var uniqueByID = Dictionary(catalogPublishers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        if let selectedPublisher {
-            uniqueByID[selectedPublisher.id] = selectedPublisher
-        }
-
-        return uniqueByID.values.sorted {
-            let comparison = $0.name.localizedCaseInsensitiveCompare($1.name)
-            if comparison != .orderedSame {
-                return comparison == .orderedAscending
-            }
-            return $0.id.uuidString < $1.id.uuidString
-        }
+        referenceResolver.availablePublishers
     }
 
     private var availablePeople: [Person] {
-        var uniqueByID = Dictionary(catalogPeople.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        for contributor in contributors {
-            uniqueByID[contributor.person.id] = contributor.person
-        }
-
-        return uniqueByID.values.sorted {
-            let comparison = $0.sortName.localizedCaseInsensitiveCompare($1.sortName)
-            if comparison != .orderedSame {
-                return comparison == .orderedAscending
-            }
-            return $0.id.uuidString < $1.id.uuidString
-        }
+        referenceResolver.availablePeople
     }
 
     private var shouldShowPhotoAnalysisSection: Bool {
@@ -670,20 +649,7 @@ struct BookEditorView: View {
     }
 
     private func referenceResolutionStatus(for target: BookTextTarget) -> BookReferenceResolutionStatus? {
-        switch target {
-        case .field(.publisher):
-            guard let selectedPublisher else { return nil }
-            return catalogPublishers.contains(where: { $0.id == selectedPublisher.id }) ? .existing : .new
-        case .field(.series):
-            guard let selectedSeries else { return nil }
-            return catalogSeries.contains(where: { $0.id == selectedSeries.id }) ? .existing : .new
-        case let .author(index):
-            guard contributors.indices.contains(index), contributors[index].role == .author else { return nil }
-            let person = contributors[index].person
-            return catalogPeople.contains(where: { $0.id == person.id }) ? .existing : .new
-        default:
-            return nil
-        }
+        referenceResolver.status(for: target)
     }
 
     private var canSave: Bool {
@@ -951,7 +917,7 @@ struct BookEditorView: View {
             combinedFragments.sort(by: TextFragment.readingOrder)
 
             let combinedName = combinedFragments.map(\.text).joined(separator: " ")
-            guard let existingPerson = uniqueMatchingPerson(named: combinedName, in: catalogPeople) else {
+            guard let existingPerson = referenceResolver.existingCatalogPerson(named: combinedName) else {
                 continue
             }
 
@@ -1011,111 +977,7 @@ struct BookEditorView: View {
     }
 
     private func resolvePerson(named rawName: String) -> Person? {
-        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return nil }
-
-        if let existing = uniqueMatchingPerson(named: name, in: availablePeople) {
-            return existing
-        }
-
-        return Person(
-            id: UUID(),
-            givenName: name,
-            birthYear: nil,
-            deathYear: nil,
-            biography: nil,
-            birthPlace: nil,
-            deathPlace: nil,
-            photos: []
-        )
-    }
-
-    private func uniqueMatchingPerson(named rawName: String, in people: [Person]) -> Person? {
-        let matches = people.compactMap { person -> (person: Person, score: Int)? in
-            guard let score = personReferenceMatchScore(for: rawName, person: person) else { return nil }
-            return (person, score)
-        }
-
-        guard let bestScore = matches.map({ $0.score }).max() else { return nil }
-        let bestMatches = matches.filter { $0.score == bestScore }
-        guard bestMatches.count == 1 else { return nil }
-        return bestMatches[0].person
-    }
-
-    private func personReferenceMatchScore(for rawName: String, person: Person) -> Int? {
-        let rawKey = normalizedReferenceKey(rawName)
-        guard !rawKey.isEmpty else { return nil }
-
-        if normalizedReferenceKey(person.displayName) == rawKey {
-            return 300
-        }
-
-        let queryTokens = normalizedPersonNameTokens(rawName)
-        let personNameParts: [String?] = [person.givenName, person.middleName, person.familyName]
-        let personTokens = personNameParts
-            .compactMap { $0 }
-            .flatMap(normalizedPersonNameTokens)
-
-        guard queryTokens.count >= 2,
-              queryTokens.count <= personTokens.count else { return nil }
-
-        if queryTokens.count == personTokens.count,
-           queryTokens.sorted() == personTokens.sorted() {
-            return 200
-        }
-
-        guard let fullTokenMatchCount = personNameFullTokenMatchCount(
-            queryTokens,
-            against: personTokens
-        ), fullTokenMatchCount > 0 else {
-            return nil
-        }
-
-        return 100 + fullTokenMatchCount
-    }
-
-    private func normalizedPersonNameTokens(_ value: String) -> [String] {
-        value
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
-            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
-            .map(String.init)
-    }
-
-    private func personNameFullTokenMatchCount(
-        _ queryTokens: [String],
-        against personTokens: [String]
-    ) -> Int? {
-        var remainingTokens = personTokens
-        var fullTokenMatchCount = 0
-
-        let orderedQueryTokens = queryTokens.sorted { lhs, rhs in
-            let lhsIsInitial = lhs.count == 1
-            let rhsIsInitial = rhs.count == 1
-            if lhsIsInitial != rhsIsInitial {
-                return !lhsIsInitial
-            }
-            return lhs.count > rhs.count
-        }
-
-        for queryToken in orderedQueryTokens {
-            if let index = remainingTokens.firstIndex(of: queryToken) {
-                if queryToken.count > 1 {
-                    fullTokenMatchCount += 1
-                }
-                remainingTokens.remove(at: index)
-                continue
-            }
-
-            guard queryToken.count == 1,
-                  let initial = queryToken.first,
-                  let index = remainingTokens.firstIndex(where: { $0.first == initial }) else {
-                return nil
-            }
-            remainingTokens.remove(at: index)
-        }
-
-        return fullTokenMatchCount
+        referenceResolver.resolvePerson(named: rawName)
     }
 
     private func applyAuthorSuggestions(_ suggestions: [SuggestedFieldValue<String>]) {
@@ -1168,19 +1030,7 @@ struct BookEditorView: View {
     }
 
     private func resolvePublisher(named rawName: String) -> Publisher? {
-        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return nil }
-
-        let key = normalizedReferenceKey(name)
-        if let existing = catalogPublishers.first(where: { normalizedReferenceKey($0.name) == key }) {
-            return existing
-        }
-
-        return Publisher(
-            id: UUID(),
-            name: name,
-            location: nil
-        )
+        referenceResolver.resolvePublisher(named: rawName)
     }
 
     private func applySeriesSuggestion(_ suggestion: SuggestedFieldValue<String>) {
@@ -1188,29 +1038,11 @@ struct BookEditorView: View {
     }
 
     private func resolveSeries(named rawName: String) -> BookSeries? {
-        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return nil }
-
-        let key = normalizedReferenceKey(name)
-        if let existing = catalogSeries.first(where: { normalizedReferenceKey($0.name) == key }) {
-            return existing
-        }
-
-        return BookSeries(
-            id: UUID(),
-            collectionID: collection.id,
-            name: name,
-            totalBookCount: nil,
-            publisher: nil
-        )
+        referenceResolver.resolveSeries(named: rawName)
     }
 
     private func normalizedReferenceKey(_ value: String) -> String {
-        value
-            .split(whereSeparator: { $0.isWhitespace })
-            .joined(separator: " ")
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
+        referenceResolver.normalizedKey(value)
     }
 
     private func saveContributor(_ contributor: BookContributor) {
