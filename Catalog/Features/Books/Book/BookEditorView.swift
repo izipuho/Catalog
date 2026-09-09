@@ -33,8 +33,7 @@ struct BookEditorView: View {
     @State private var isPresentingDeleteConfirmation = false
     @State private var photoAnalysis = BookPhotoAnalysisController()
     @State private var didStartInitialAnalysis = false
-    @State private var textFragmentState = TextFragmentState<BookTextTarget>()
-    @State private var authorBaseNames: [Int: String] = [:]
+    @State private var textAssignmentController = BookTextAssignmentController()
 
     private let editorItemID: UUID
     private let coverExtractor = BookCoverExtractor()
@@ -130,7 +129,7 @@ struct BookEditorView: View {
     }
 
     private var textAssignments: [BookTextTarget: [TextFragment]] {
-        textFragmentState.assignments
+        textAssignmentController.assignments
     }
 
     init(
@@ -534,10 +533,10 @@ struct BookEditorView: View {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if textFragmentState.hasUnusedFragments {
+                if textAssignmentController.hasUnusedFragments {
                     TextFragmentBar(
-                        fragments: textFragmentState.fragments,
-                        usedFragmentIDs: textFragmentState.usedFragmentIDs
+                        fragments: textAssignmentController.fragments,
+                        usedFragmentIDs: textAssignmentController.usedFragmentIDs
                     )
                 }
             }
@@ -597,7 +596,7 @@ struct BookEditorView: View {
                 consumeInitialCoverPhotoIfNeeded()
             }
             .onChange(of: photoAnalysis.recognizedText) { _, recognizedText in
-                syncTextFragments(from: recognizedText)
+                textAssignmentController.sync(from: recognizedText)
             }
             .sheet(isPresented: $isPresentingContributorEditor) {
                 let contributor = editingContributorIndex.flatMap { index in
@@ -822,74 +821,29 @@ struct BookEditorView: View {
         photoAnalysis.analyze(image: initialAnalysisImage)
     }
 
-    private func syncTextFragments(from recognizedText: [RecognizedTextFeature]) {
-        let sources = recognizedText.enumerated().map { index, feature in
-            TextFragmentSource(
-                text: feature.text,
-                confidence: feature.confidence,
-                boundingBox: feature.boundingBox,
-                sourceIndex: index
-            )
-        }
-        textFragmentState.sync(from: sources)
-    }
-
     @discardableResult
     private func assignTextFragments(
         _ droppedFragments: [TextFragmentTransfer],
         to target: BookTextTarget
     ) -> Bool {
-        var newFragments = textFragmentState.matching(droppedFragments)
-        guard !newFragments.isEmpty else { return false }
-
-        switch target {
-        case .field(.volume):
-            newFragments = newFragments.compactMap(prepareVolumeFragment)
-            guard !newFragments.isEmpty else { return false }
-        case .field(.publicationYear):
-            newFragments = newFragments.compactMap(preparePublicationYearFragment)
-            guard !newFragments.isEmpty else { return false }
-        default:
-            break
+        guard let preparedAssignment = textAssignmentController.prepareAssignment(
+            droppedFragments,
+            to: target
+        ), applyTextAssignment(preparedAssignment.assignment, to: target) else {
+            return false
         }
 
-        let assigned = textFragmentState.mergedAssignment(adding: newFragments, to: target)
-        let assignment = BookTextAssignmentRules.makeAssignment(from: assigned)
-        guard applyTextAssignment(assignment, to: target) else { return false }
-
-        textFragmentState.setAssignment(assigned, for: target)
+        textAssignmentController.commit(preparedAssignment)
         return true
     }
 
-    private func prepareVolumeFragment(_ fragment: TextFragment) -> TextFragment? {
-        guard let extraction = BookTextAssignmentRules.volumeExtraction(in: fragment.text) else { return nil }
-        return textFragmentState.split(
-            fragment,
-            extracting: extraction.range,
-            replacementText: extraction.replacementText
-        )
-    }
-
-    private func preparePublicationYearFragment(_ fragment: TextFragment) -> TextFragment? {
-        guard let extraction = BookTextAssignmentRules.publicationYearExtraction(in: fragment.text) else { return nil }
-        return textFragmentState.split(
-            fragment,
-            extracting: extraction.range,
-            replacementText: extraction.replacementText
-        )
-    }
-
     private func removeTextFragment(_ fragment: TextFragment, from target: BookTextTarget) {
-        let assignedFragments = textFragmentState.remove(fragment, from: target)
-
-        if assignedFragments.isEmpty,
-           case let .author(index) = target,
-           authorBaseNames[index] == "" {
+        switch textAssignmentController.remove(fragment, from: target) {
+        case let .apply(assignment):
+            _ = applyTextAssignment(assignment, to: target)
+        case let .deleteAuthor(index):
             deleteContributors(at: IndexSet(integer: index))
-            return
         }
-
-        _ = applyTextAssignment(BookTextAssignmentRules.makeAssignment(from: assignedFragments), to: target)
     }
 
     @discardableResult
@@ -945,7 +899,7 @@ struct BookEditorView: View {
                 return false
             }
 
-            let baseName = authorBaseNames[index] ?? ""
+            let baseName = textAssignmentController.authorBaseName(for: index) ?? ""
             let name = [baseName, assignment.text]
                 .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 .joined(separator: " ")
@@ -965,7 +919,7 @@ struct BookEditorView: View {
         guard field == .title || field == .subtitle else { return }
 
         let target = BookTextTarget.field(field)
-        guard !textFragmentState.consumeAssignment(for: target).isEmpty else { return }
+        guard textAssignmentController.consumeAssignment(for: target) else { return }
 
         switch field {
         case .title:
@@ -979,21 +933,16 @@ struct BookEditorView: View {
 
     @discardableResult
     private func createAuthor(from droppedFragments: [TextFragmentTransfer]) -> Bool {
-        var fragments = textFragmentState.matching(droppedFragments)
+        var fragments = textAssignmentController.matching(droppedFragments)
         guard !fragments.isEmpty else { return false }
         fragments.sort(by: TextFragment.readingOrder)
 
-        let authorIndices = textAssignments.keys.compactMap { target -> Int? in
-            guard case let .author(index) = target else { return nil }
-            return index
-        }.sorted()
-
-        for index in authorIndices {
+        for index in textAssignmentController.authorIndices {
             let target = BookTextTarget.author(index)
             guard contributors.indices.contains(index),
                   contributors[index].role == .author,
-                  authorBaseNames[index] == "",
-                  let existingFragments = textAssignments[target] else { continue }
+                  textAssignmentController.authorBaseName(for: index) == "",
+                  let existingFragments = textAssignmentController.assignment(for: target) else { continue }
 
             var combinedFragments = existingFragments
             for fragment in fragments where !combinedFragments.contains(fragment) {
@@ -1007,7 +956,7 @@ struct BookEditorView: View {
             }
 
             let contributor = contributors[index]
-            textFragmentState.setAssignment(combinedFragments, for: target)
+            textAssignmentController.setAssignment(combinedFragments, for: target)
             contributors[index] = BookContributor(
                 role: contributor.role,
                 order: contributor.order,
@@ -1028,8 +977,8 @@ struct BookEditorView: View {
             )
         )
         normalizeContributorOrder()
-        textFragmentState.setAssignment(fragments, for: .author(index))
-        authorBaseNames[index] = ""
+        textAssignmentController.setAssignment(fragments, for: .author(index))
+        textAssignmentController.setAuthorBaseName("", for: index)
         return true
     }
 
@@ -1042,20 +991,22 @@ struct BookEditorView: View {
             return false
         }
 
-        let newFragments = textFragmentState.matching(droppedFragments)
-        guard !newFragments.isEmpty else { return false }
-
         let target = BookTextTarget.author(index)
-        if authorBaseNames[index] == nil {
-            authorBaseNames[index] = contributors[index].person.displayName
+        if textAssignmentController.authorBaseName(for: index) == nil {
+            textAssignmentController.setAuthorBaseName(
+                contributors[index].person.displayName,
+                for: index
+            )
         }
 
-        let assigned = textFragmentState.mergedAssignment(adding: newFragments, to: target)
-        guard applyTextAssignment(BookTextAssignmentRules.makeAssignment(from: assigned), to: target) else {
+        guard let preparedAssignment = textAssignmentController.prepareAssignment(
+            droppedFragments,
+            to: target
+        ), applyTextAssignment(preparedAssignment.assignment, to: target) else {
             return false
         }
 
-        textFragmentState.setAssignment(assigned, for: target)
+        textAssignmentController.commit(preparedAssignment)
         return true
     }
 
@@ -1276,26 +1227,8 @@ struct BookEditorView: View {
         let removedIndices = Set(offsets)
         let survivingIndices = contributors.indices.filter { !removedIndices.contains($0) }
 
-        var remappedAssignments: [BookTextTarget: [TextFragment]] = [:]
-        for (target, fragments) in textAssignments {
-            if case .field = target {
-                remappedAssignments[target] = fragments
-            }
-        }
-
-        var remappedBaseNames: [Int: String] = [:]
-        for (newIndex, oldIndex) in survivingIndices.enumerated() {
-            if let fragments = textAssignments[.author(oldIndex)] {
-                remappedAssignments[.author(newIndex)] = fragments
-            }
-            if let baseName = authorBaseNames[oldIndex] {
-                remappedBaseNames[newIndex] = baseName
-            }
-        }
-
         contributors.remove(atOffsets: offsets)
-        textFragmentState.assignments = remappedAssignments
-        authorBaseNames = remappedBaseNames
+        textAssignmentController.remapAuthors(survivingIndices: survivingIndices)
         normalizeContributorOrder()
     }
 
