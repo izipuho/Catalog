@@ -249,6 +249,7 @@ private struct PublisherCard: View {
 /// Displays the editor used to create or update a publisher.
 struct PublisherEditorView: View {
     private let existingPublisher: Publisher?
+    private let collectionID: UUID
     private let bookCount: Int
     private let seriesCount: Int
     private let onDelete: (() -> Void)?
@@ -264,12 +265,14 @@ struct PublisherEditorView: View {
 
     init(
         publisher: Publisher?,
+        collectionID: UUID,
         bookCount: Int = 0,
         seriesCount: Int = 0,
         onDelete: (() -> Void)? = nil,
         onSave: @escaping (Publisher) -> Void
     ) {
         self.existingPublisher = publisher
+        self.collectionID = collectionID
         self.bookCount = bookCount
         self.seriesCount = seriesCount
         self.onDelete = onDelete
@@ -381,6 +384,8 @@ struct PublisherEditorView: View {
 
         let publisher = Publisher(
             id: existingPublisher?.id ?? editorPublisherID,
+            canonicalID: existingPublisher?.canonicalID,
+            collectionID: collectionID,
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             logo: logoAssets.first?.with(sortOrder: 0)
         )

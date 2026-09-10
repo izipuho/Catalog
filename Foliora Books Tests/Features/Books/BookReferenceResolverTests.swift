@@ -3,11 +3,14 @@ import Testing
 @testable import Foliora_Books
 
 struct BookReferenceResolverTests {
+    private let testCollectionID = UUID()
+
     @Test
     func reusesExistingPublisherAndSeriesIgnoringWhitespaceCaseAndDiacritics() {
         let collectionID = UUID()
         let publisher = Publisher(
             id: UUID(),
+            collectionID: collectionID,
             name: "Éditions Test"
         )
         let series = BookSeries(
@@ -53,7 +56,7 @@ struct BookReferenceResolverTests {
         let catalogPerson = makePerson(givenName: "Anna", familyName: "Smith")
         let transientPerson = makePerson(givenName: "John", familyName: "Doe")
         let resolver = BookReferenceResolver(
-            collectionID: UUID(),
+            collectionID: testCollectionID,
             catalogSeries: [],
             catalogPublishers: [],
             catalogPeople: [catalogPerson],
@@ -68,9 +71,46 @@ struct BookReferenceResolverTests {
         #expect(Set(resolver.availablePeople.map(\.id)) == Set([catalogPerson.id, transientPerson.id]))
     }
 
+    @Test
+    func ignoresPeopleAndPublishersFromOtherCollections() {
+        let localPerson = makePerson(givenName: "Local")
+        let foreignPerson = Person(
+            id: UUID(),
+            collectionID: UUID(),
+            givenName: "Foreign",
+            birthYear: nil,
+            deathYear: nil,
+            biography: nil,
+            birthPlace: nil,
+            deathPlace: nil
+        )
+        let localPublisher = Publisher(
+            id: UUID(),
+            collectionID: testCollectionID,
+            name: "Local Publisher"
+        )
+        let foreignPublisher = Publisher(
+            id: UUID(),
+            collectionID: UUID(),
+            name: "Foreign Publisher"
+        )
+        let resolver = BookReferenceResolver(
+            collectionID: testCollectionID,
+            catalogSeries: [],
+            catalogPublishers: [localPublisher, foreignPublisher],
+            catalogPeople: [localPerson, foreignPerson],
+            contributors: [],
+            selectedSeries: nil,
+            selectedPublisher: nil
+        )
+
+        #expect(resolver.availablePeople.map(\.id) == [localPerson.id])
+        #expect(resolver.availablePublishers.map(\.id) == [localPublisher.id])
+    }
+
     private func makeResolver(people: [Person]) -> BookReferenceResolver {
         BookReferenceResolver(
-            collectionID: UUID(),
+            collectionID: testCollectionID,
             catalogSeries: [],
             catalogPublishers: [],
             catalogPeople: people,
@@ -87,6 +127,7 @@ struct BookReferenceResolverTests {
     ) -> Person {
         Person(
             id: UUID(),
+            collectionID: testCollectionID,
             givenName: givenName,
             familyName: familyName,
             middleName: middleName,

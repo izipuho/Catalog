@@ -38,8 +38,13 @@ struct BookReferenceResolver {
     }
 
     var availablePublishers: [Publisher] {
-        var uniqueByID = Dictionary(catalogPublishers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        if let selectedPublisher {
+        var uniqueByID = Dictionary(
+            catalogPublishers
+                .filter { $0.collectionID == collectionID }
+                .map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        if let selectedPublisher, selectedPublisher.collectionID == collectionID {
             uniqueByID[selectedPublisher.id] = selectedPublisher
         }
 
@@ -53,8 +58,13 @@ struct BookReferenceResolver {
     }
 
     var availablePeople: [Person] {
-        var uniqueByID = Dictionary(catalogPeople.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        for contributor in contributors {
+        var uniqueByID = Dictionary(
+            catalogPeople
+                .filter { $0.collectionID == collectionID }
+                .map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for contributor in contributors where contributor.person.collectionID == collectionID {
             uniqueByID[contributor.person.id] = contributor.person
         }
 
@@ -77,6 +87,7 @@ struct BookReferenceResolver {
 
         return Person(
             id: UUID(),
+            collectionID: collectionID,
             givenName: name,
             birthYear: nil,
             deathYear: nil,
@@ -88,7 +99,10 @@ struct BookReferenceResolver {
     }
 
     func existingCatalogPerson(named rawName: String) -> Person? {
-        uniqueMatchingPerson(named: rawName, in: catalogPeople)
+        uniqueMatchingPerson(
+            named: rawName,
+            in: catalogPeople.filter { $0.collectionID == collectionID }
+        )
     }
 
     func resolvePublisher(named rawName: String) -> Publisher? {
@@ -96,12 +110,15 @@ struct BookReferenceResolver {
         guard !name.isEmpty else { return nil }
 
         let key = normalizedKey(name)
-        if let existing = catalogPublishers.first(where: { normalizedKey($0.name) == key }) {
+        if let existing = catalogPublishers.first(where: {
+            $0.collectionID == collectionID && normalizedKey($0.name) == key
+        }) {
             return existing
         }
 
         return Publisher(
             id: UUID(),
+            collectionID: collectionID,
             name: name
         )
     }
@@ -128,14 +145,18 @@ struct BookReferenceResolver {
         switch target {
         case .field(.publisher):
             guard let selectedPublisher else { return nil }
-            return catalogPublishers.contains(where: { $0.id == selectedPublisher.id }) ? .existing : .new
+            return catalogPublishers.contains(where: {
+                $0.collectionID == collectionID && $0.id == selectedPublisher.id
+            }) ? .existing : .new
         case .field(.series):
             guard let selectedSeries else { return nil }
             return catalogSeries.contains(where: { $0.id == selectedSeries.id }) ? .existing : .new
         case let .author(index):
             guard contributors.indices.contains(index), contributors[index].role == .author else { return nil }
             let person = contributors[index].person
-            return catalogPeople.contains(where: { $0.id == person.id }) ? .existing : .new
+            return catalogPeople.contains(where: {
+                $0.collectionID == collectionID && $0.id == person.id
+            }) ? .existing : .new
         default:
             return nil
         }

@@ -431,6 +431,8 @@ struct PersonEditorView: View {
 
         let person = Person(
             id: existingPerson.id,
+            canonicalID: existingPerson.canonicalID,
+            collectionID: existingPerson.collectionID,
             givenName: givenName.trimmingCharacters(in: .whitespacesAndNewlines),
             familyName: familyName.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             middleName: middleName.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,

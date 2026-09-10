@@ -170,6 +170,7 @@ struct PublisherDetailView: View {
         .sheet(isPresented: $isPresentingEditor) {
             PublisherEditorView(
                 publisher: publisher,
+                collectionID: publisher.collectionID,
                 bookCount: allBookCount,
                 seriesCount: allSeriesCount,
                 onDelete: {

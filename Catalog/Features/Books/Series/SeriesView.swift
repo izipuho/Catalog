@@ -366,6 +366,7 @@ struct SeriesEditorView: View {
                 SeriesPublisherSelectionView(
                     selection: $selectedPublisher,
                     publishers: availablePublishers,
+                    collectionID: collectionID,
                     onCreate: { publisher in
                         localPublishers.append(publisher)
                         selectedPublisher = publisher
@@ -417,6 +418,7 @@ struct SeriesEditorView: View {
 private struct SeriesPublisherSelectionView: View {
     @Binding var selection: Publisher?
     let publishers: [Publisher]
+    let collectionID: UUID
     let onCreate: (Publisher) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -444,6 +446,7 @@ private struct SeriesPublisherSelectionView: View {
                     Button {
                         let publisher = Publisher(
                             id: UUID(),
+                            collectionID: collectionID,
                             name: newPublisherName
                         )
                         onCreate(publisher)

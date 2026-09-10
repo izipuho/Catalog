@@ -56,6 +56,7 @@ func BookContributorEditorRow(
 struct BookContributorEditorView: View {
     let title: String
     let people: [Person]
+    let collectionID: UUID
     let availableRoles: [BookContributorRole]
     let onCreatePerson: ((Person) -> Void)?
     let onClear: ((BookContributorRole) -> Void)?
@@ -72,6 +73,7 @@ struct BookContributorEditorView: View {
         role: BookContributorRole,
         person: Person?,
         people: [Person],
+        collectionID: UUID,
         availableRoles: [BookContributorRole] = BookContributorRole.allCases,
         onCreatePerson: ((Person) -> Void)? = nil,
         onClear: ((BookContributorRole) -> Void)? = nil,
@@ -80,6 +82,7 @@ struct BookContributorEditorView: View {
     ) {
         self.title = title
         self.people = people
+        self.collectionID = collectionID
         self.availableRoles = availableRoles
         self.onCreatePerson = onCreatePerson
         self.onClear = onClear
@@ -163,6 +166,7 @@ struct BookContributorEditorView: View {
                 BookPersonSelectionView(
                     selection: $selectedPerson,
                     people: people,
+                    collectionID: collectionID,
                     onCreate: onCreatePerson
                 )
             }
@@ -173,6 +177,7 @@ struct BookContributorEditorView: View {
 private struct BookPersonSelectionView: View {
     @Binding var selection: Person?
     let people: [Person]
+    let collectionID: UUID
     let onCreate: ((Person) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
@@ -202,6 +207,7 @@ private struct BookPersonSelectionView: View {
                     Button {
                         let person = Person(
                             id: UUID(),
+                            collectionID: collectionID,
                             givenName: name,
                             birthYear: nil,
                             deathYear: nil,

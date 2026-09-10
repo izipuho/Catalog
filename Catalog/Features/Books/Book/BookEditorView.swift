@@ -378,6 +378,7 @@ struct BookEditorView: View {
                         BookPublisherPickerField(
                             selection: $editorState.selectedPublisher,
                             publishers: referenceResolver.availablePublishers,
+                            collectionID: collection.id,
                             statusSystemImage: assignedReferenceStatusSystemImage(for: .field(.publisher)),
                             onCreate: { newPublisher in
                                 catalogPublishers.append(newPublisher)
@@ -573,6 +574,7 @@ struct BookEditorView: View {
                     role: contributor?.role ?? .author,
                     person: contributor?.person,
                     people: referenceResolver.availablePeople,
+                    collectionID: collection.id,
                     onCreatePerson: { newPerson in
                         catalogPeople.append(newPerson)
                     },
@@ -1047,7 +1049,9 @@ struct BookEditorView: View {
         catalogSeries = snapshot.bookSeries
             .filter { $0.collectionID == collection.id }
         catalogPublishers = snapshot.publishers
+            .filter { $0.collectionID == collection.id }
         catalogPeople = snapshot.people
+            .filter { $0.collectionID == collection.id }
     }
 
     private func saveBook() {

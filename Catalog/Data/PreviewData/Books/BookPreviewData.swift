@@ -25,8 +25,10 @@ extension PreviewData {
     }
 
     private static func makeMinimalBookRecords(from core: CoreMinimal) -> [BookRecord] {
+        let collectionID = core.items[0].collectionID
         let publisher = Publisher(
             id: UUID(),
+            collectionID: collectionID,
             name: "Preview Publisher",
             logo: makePreviewPhoto(
                 resourcePath: "Media/IMG_7502.HEIC",
@@ -35,7 +37,7 @@ extension PreviewData {
         )
         let series = BookSeries(
             id: UUID(),
-            collectionID: core.items[0].collectionID,
+            collectionID: collectionID,
             name: "Preview Series",
             totalBookCount: 3,
             publisher: publisher
@@ -43,6 +45,7 @@ extension PreviewData {
 
         let author = Person(
             id: UUID(),
+            collectionID: collectionID,
             givenName: "Author",
             familyName: "One",
             birthYear: 1927,
@@ -59,6 +62,7 @@ extension PreviewData {
         )
         let translator = Person(
             id: UUID(),
+            collectionID: collectionID,
             givenName: "Translator",
             familyName: "One",
             birthYear: 1950,
@@ -69,6 +73,7 @@ extension PreviewData {
         )
         let editor = Person(
             id: UUID(),
+            collectionID: collectionID,
             givenName: "Editor",
             familyName: "One",
             birthYear: nil,
@@ -146,6 +151,7 @@ extension PreviewData {
                                 order: 0,
                                 person: Person(
                                     id: UUID(),
+                                    collectionID: collectionID,
                                     givenName: "Author",
                                     familyName: "Two",
                                     birthYear: nil,
@@ -160,6 +166,7 @@ extension PreviewData {
                                 order: 1,
                                 person: Person(
                                     id: UUID(),
+                                    collectionID: collectionID,
                                     givenName: "Translator",
                                     familyName: "Two",
                                     birthYear: nil,
@@ -197,6 +204,7 @@ extension PreviewData {
                                 order: 0,
                                 person: Person(
                                     id: UUID(),
+                                    collectionID: collectionID,
                                     givenName: "Editor",
                                     familyName: "Two",
                                     birthYear: nil,
