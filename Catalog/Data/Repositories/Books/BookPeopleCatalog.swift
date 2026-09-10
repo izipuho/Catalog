@@ -24,12 +24,32 @@ extension CoreDataCatalogRepository {
 
     @discardableResult
     func upsertCatalogPerson(_ person: Person) -> NSManagedObject {
+        let collectionRequest = NSFetchRequest<NSManagedObject>(entityName: "CollectionEntity")
+        collectionRequest.predicate = NSPredicate(format: "id == %@", person.collectionID as NSUUID)
+        collectionRequest.fetchLimit = 1
+
+        guard let collection = (try? context.fetch(collectionRequest))?.first else {
+            preconditionFailure("Person collection does not exist.")
+        }
+
         let request = NSFetchRequest<NSManagedObject>(entityName: "PersonEntity")
         request.predicate = NSPredicate(format: "id == %@", person.id as NSUUID)
         request.fetchLimit = 1
 
-        let entity = (try? context.fetch(request))?.first ?? makeEntity(named: "PersonEntity")
+        let existingEntity = (try? context.fetch(request))?.first
+        if let existingCollection = existingEntity?.value(forKey: "collection") as? NSManagedObject,
+           existingCollection != collection {
+            preconditionFailure("PersonEntity cannot be shared across collections.")
+        }
+
+        let entity = existingEntity ?? makeEntity(named: "PersonEntity")
+        if existingEntity == nil,
+           let store = collection.objectID.persistentStore {
+            context.assign(entity, to: store)
+        }
+
         entity.setValue(person.id, forKey: "id")
+        entity.setValue(person.canonicalID, forKey: "canonicalID")
         entity.setValue(person.givenName, forKey: "givenName")
         entity.setValue(person.familyName, forKey: "familyName")
         entity.setValue(person.middleName, forKey: "middleName")
@@ -38,6 +58,7 @@ extension CoreDataCatalogRepository {
         entity.setValue(person.biography, forKey: "biography")
         entity.setValue(person.birthPlace, forKey: "birthPlace")
         entity.setValue(person.deathPlace, forKey: "deathPlace")
+        entity.setValue(collection, forKey: "collection")
         replacePersonPhotos(person.photos, for: entity)
         return entity
     }

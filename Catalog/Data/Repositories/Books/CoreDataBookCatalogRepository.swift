@@ -90,7 +90,16 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
         entity.setValue(item, forKey: "item")
         fillInverseRelationship(from: entity, relationshipName: "item", with: item)
         replaceBookCoverImage(book.details.coverImage, for: entity)
-        entity.setValue(book.details.publisher.map(upsertPublisher), forKey: "publisher")
+        entity.setValue(
+            book.details.publisher.map { publisher in
+                precondition(
+                    publisher.collectionID == book.item.collectionID,
+                    "Publisher collection does not match the book collection."
+                )
+                return upsertPublisher(publisher)
+            },
+            forKey: "publisher"
+        )
         entity.setValue(book.details.series.map { upsertBookSeries($0, for: item) }, forKey: "series")
         replaceContributors(book.details.contributors, for: entity)
         replaceBookIdentifiers(book.details.identifiers, for: entity)
@@ -139,19 +148,49 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
         entity.setValue(series.id, forKey: "id")
         entity.setValue(series.name, forKey: "name")
         entity.setValue(series.totalBookCount, forKey: "totalBookCount")
-        entity.setValue(series.publisher.map(upsertPublisher), forKey: "publisher")
+        entity.setValue(
+            series.publisher.map { publisher in
+                precondition(
+                    publisher.collectionID == series.collectionID,
+                    "Publisher collection does not match the series collection."
+                )
+                return upsertPublisher(publisher)
+            },
+            forKey: "publisher"
+        )
         entity.setValue(collection, forKey: "collection")
         return entity
     }
 
     private func upsertPublisher(_ publisher: Publisher) -> NSManagedObject {
+        let collectionRequest = NSFetchRequest<NSManagedObject>(entityName: "CollectionEntity")
+        collectionRequest.predicate = NSPredicate(format: "id == %@", publisher.collectionID as NSUUID)
+        collectionRequest.fetchLimit = 1
+
+        guard let collection = (try? context.fetch(collectionRequest))?.first else {
+            preconditionFailure("Publisher collection does not exist.")
+        }
+
         let request = NSFetchRequest<NSManagedObject>(entityName: "PublisherEntity")
         request.predicate = NSPredicate(format: "id == %@", publisher.id as NSUUID)
         request.fetchLimit = 1
 
-        let entity = (try? context.fetch(request))?.first ?? makeEntity(named: "PublisherEntity")
+        let existingEntity = (try? context.fetch(request))?.first
+        if let existingCollection = existingEntity?.value(forKey: "collection") as? NSManagedObject,
+           existingCollection != collection {
+            preconditionFailure("PublisherEntity cannot be shared across collections.")
+        }
+
+        let entity = existingEntity ?? makeEntity(named: "PublisherEntity")
+        if existingEntity == nil,
+           let store = collection.objectID.persistentStore {
+            context.assign(entity, to: store)
+        }
+
         entity.setValue(publisher.id, forKey: "id")
+        entity.setValue(publisher.canonicalID, forKey: "canonicalID")
         entity.setValue(publisher.name, forKey: "name")
+        entity.setValue(collection, forKey: "collection")
         replacePublisherLogo(publisher.logo, for: entity)
         return entity
     }
@@ -223,9 +262,20 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
     }
 
     private func replaceContributors(_ contributors: [BookContributor], for book: NSManagedObject) {
+        guard let item = book.value(forKey: "item") as? NSManagedObject,
+              let collection = item.value(forKey: "collection") as? NSManagedObject,
+              let collectionID = collection.value(forKey: "id") as? UUID else {
+            preconditionFailure("BookEntity is missing its collection while saving contributors.")
+        }
+
         bookRelatedObjects(book, "contributors").forEach(context.delete)
 
         let entities = contributors.map { contributor -> NSManagedObject in
+            precondition(
+                contributor.person.collectionID == collectionID,
+                "Person collection does not match the book collection."
+            )
+
             let entity = makeEntity(named: "BookContributorEntity")
             entity.setValue(contributor.role.rawValue, forKey: "role")
             entity.setValue(contributor.order, forKey: "order")
