@@ -72,7 +72,7 @@ struct BookReferenceResolverTests {
     }
 
     @Test
-    func ignoresPeopleAndPublishersFromOtherCollections() {
+    func ignoresPeopleAndPublishersFromOtherCollectionsInPickers() {
         let localPerson = makePerson(givenName: "Local")
         let foreignPerson = Person(
             id: UUID(),
@@ -106,6 +106,109 @@ struct BookReferenceResolverTests {
 
         #expect(resolver.availablePeople.map(\.id) == [localPerson.id])
         #expect(resolver.availablePublishers.map(\.id) == [localPublisher.id])
+    }
+
+    @Test
+    func materializesPersonFromAnotherCollectionWithCanonicalIdentity() {
+        let canonicalID = UUID()
+        let sourcePhoto = MediaAsset(
+            id: UUID(),
+            kind: .photo,
+            localIdentifier: "source-photo",
+            displayName: "Portrait",
+            sortOrder: 0,
+            mimeType: "image/jpeg",
+            originalData: Data([1, 2, 3])
+        )
+        let source = Person(
+            id: UUID(),
+            canonicalID: canonicalID,
+            collectionID: UUID(),
+            givenName: "Max",
+            familyName: "Frei",
+            birthYear: 1965,
+            deathYear: nil,
+            biography: "Biography",
+            birthPlace: "Odessa",
+            deathPlace: nil,
+            photos: [sourcePhoto]
+        )
+        let resolver = makeResolver(people: [source])
+
+        let resolved = resolver.resolvePerson(named: "Max Frei")
+
+        #expect(resolved?.id != source.id)
+        #expect(resolved?.canonicalID == canonicalID)
+        #expect(resolved?.collectionID == testCollectionID)
+        #expect(resolved?.givenName == source.givenName)
+        #expect(resolved?.familyName == source.familyName)
+        #expect(resolved?.photos.first?.id != sourcePhoto.id)
+        #expect(resolved?.photos.first?.localIdentifier != sourcePhoto.localIdentifier)
+        #expect(resolved?.photos.first?.originalData == sourcePhoto.originalData)
+
+        guard let resolved else { return }
+        let statusResolver = BookReferenceResolver(
+            collectionID: testCollectionID,
+            catalogSeries: [],
+            catalogPublishers: [],
+            catalogPeople: [source],
+            contributors: [BookContributor(role: .author, order: 0, person: resolved)],
+            selectedSeries: nil,
+            selectedPublisher: nil
+        )
+        #expect(statusResolver.status(for: .author(0))?.systemImage == "checkmark.circle.fill")
+    }
+
+    @Test
+    func materializesPublisherFromAnotherCollectionWithCanonicalIdentity() {
+        let canonicalID = UUID()
+        let sourceLogo = MediaAsset(
+            id: UUID(),
+            kind: .photo,
+            localIdentifier: "source-logo",
+            displayName: "Logo",
+            sortOrder: 0,
+            mimeType: "image/png",
+            originalData: Data([4, 5, 6])
+        )
+        let source = Publisher(
+            id: UUID(),
+            canonicalID: canonicalID,
+            collectionID: UUID(),
+            name: "Amphora",
+            logo: sourceLogo
+        )
+        let resolver = BookReferenceResolver(
+            collectionID: testCollectionID,
+            catalogSeries: [],
+            catalogPublishers: [source],
+            catalogPeople: [],
+            contributors: [],
+            selectedSeries: nil,
+            selectedPublisher: nil
+        )
+
+        let resolved = resolver.resolvePublisher(named: "amphora")
+
+        #expect(resolved?.id != source.id)
+        #expect(resolved?.canonicalID == canonicalID)
+        #expect(resolved?.collectionID == testCollectionID)
+        #expect(resolved?.name == source.name)
+        #expect(resolved?.logo?.id != sourceLogo.id)
+        #expect(resolved?.logo?.localIdentifier != sourceLogo.localIdentifier)
+        #expect(resolved?.logo?.originalData == sourceLogo.originalData)
+
+        guard let resolved else { return }
+        let statusResolver = BookReferenceResolver(
+            collectionID: testCollectionID,
+            catalogSeries: [],
+            catalogPublishers: [source],
+            catalogPeople: [],
+            contributors: [],
+            selectedSeries: nil,
+            selectedPublisher: resolved
+        )
+        #expect(statusResolver.status(for: .field(.publisher))?.systemImage == "checkmark.circle.fill")
     }
 
     private func makeResolver(people: [Person]) -> BookReferenceResolver {
