@@ -701,7 +701,6 @@ struct BookDetailView: View {
                 allBookCount: allBooks.filter { candidate in
                     candidate.details.contributors.contains { $0.person.id == person.id }
                 }.count,
-                places: catalogSnapshot?.places ?? [],
                 repository: repository,
                 canEditCollection: canEditCollection,
                 accentColor: detailAccentColor,
@@ -717,7 +716,6 @@ struct BookDetailView: View {
                 series: librarySeries.filter { $0.publisher?.id == publisher.id },
                 allBookCount: allBooks.filter { $0.details.publisher?.id == publisher.id }.count,
                 allSeriesCount: allSeries.filter { $0.publisher?.id == publisher.id }.count,
-                places: catalogSnapshot?.places ?? [],
                 repository: repository,
                 canEditCollection: canEditCollection,
                 accentColor: detailAccentColor,

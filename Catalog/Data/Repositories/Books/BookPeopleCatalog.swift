@@ -36,26 +36,9 @@ extension CoreDataCatalogRepository {
         entity.setValue(person.birthYear, forKey: "birthYear")
         entity.setValue(person.deathYear, forKey: "deathYear")
         entity.setValue(person.biography, forKey: "biography")
-        entity.setValue(person.birthPlace.map(upsertCatalogPlace), forKey: "birthPlace")
-        entity.setValue(person.deathPlace.map(upsertCatalogPlace), forKey: "deathPlace")
+        entity.setValue(person.birthPlace, forKey: "birthPlace")
+        entity.setValue(person.deathPlace, forKey: "deathPlace")
         replacePersonPhotos(person.photos, for: entity)
-        return entity
-    }
-
-    private func upsertCatalogPlace(_ place: Place) -> NSManagedObject {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "PlaceEntity")
-        request.predicate = NSPredicate(format: "id == %@", place.id as NSUUID)
-        request.fetchLimit = 1
-
-        let entity = (try? context.fetch(request))?.first ?? makeEntity(named: "PlaceEntity")
-        entity.setValue(place.id, forKey: "id")
-        entity.setValue(place.displayName, forKey: "displayName")
-        entity.setValue(place.countryCode, forKey: "countryCode")
-        entity.setValue(place.countryName, forKey: "countryName")
-        entity.setValue(place.regionName, forKey: "regionName")
-        entity.setValue(place.cityName, forKey: "cityName")
-        entity.setValue(place.latitude, forKey: "latitude")
-        entity.setValue(place.longitude, forKey: "longitude")
         return entity
     }
 

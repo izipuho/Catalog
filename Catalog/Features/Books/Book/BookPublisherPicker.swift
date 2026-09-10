@@ -75,8 +75,7 @@ private struct BookPublisherSelectionView: View {
                     Button {
                         let newPublisher = Publisher(
                             id: UUID(),
-                            name: newPublisherName,
-                            location: nil
+                            name: newPublisherName
                         )
                         onCreate(newPublisher)
                         selection = newPublisher

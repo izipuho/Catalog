@@ -152,7 +152,6 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
         let entity = (try? context.fetch(request))?.first ?? makeEntity(named: "PublisherEntity")
         entity.setValue(publisher.id, forKey: "id")
         entity.setValue(publisher.name, forKey: "name")
-        entity.setValue(publisher.location.map(upsertBookPlace), forKey: "location")
         replacePublisherLogo(publisher.logo, for: entity)
         return entity
     }
@@ -280,23 +279,6 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
         request.predicate = NSPredicate(format: "item.id == %@", itemID as NSUUID)
         request.fetchLimit = 1
         return (try? context.fetch(request))?.first
-    }
-
-    private func upsertBookPlace(_ place: Place) -> NSManagedObject {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "PlaceEntity")
-        request.predicate = NSPredicate(format: "id == %@", place.id as NSUUID)
-        request.fetchLimit = 1
-
-        let entity = (try? context.fetch(request))?.first ?? makeEntity(named: "PlaceEntity")
-        entity.setValue(place.id, forKey: "id")
-        entity.setValue(place.displayName, forKey: "displayName")
-        entity.setValue(place.countryCode, forKey: "countryCode")
-        entity.setValue(place.countryName, forKey: "countryName")
-        entity.setValue(place.regionName, forKey: "regionName")
-        entity.setValue(place.cityName, forKey: "cityName")
-        entity.setValue(place.latitude, forKey: "latitude")
-        entity.setValue(place.longitude, forKey: "longitude")
-        return entity
     }
 
     private func bookRelatedObjects(_ entity: NSManagedObject, _ key: String) -> [NSManagedObject] {
