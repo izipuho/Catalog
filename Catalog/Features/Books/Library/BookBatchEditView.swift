@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Edits shared and book-specific fields for multiple selected books.
 struct BookBatchEditView: View {
+    let collectionID: UUID
     let people: [Person]
     let series: [BookSeries]
     let publishers: [Publisher]
@@ -22,11 +23,13 @@ struct BookBatchEditView: View {
     @State private var publicationYearShouldClear = false
 
     init(
+        collectionID: UUID,
         people: [Person] = [],
         series: [BookSeries] = [],
         publishers: [Publisher] = [],
         onSave: @escaping (ItemBatchEdit, BookBatchEdit) -> Void
     ) {
+        self.collectionID = collectionID
         self.people = people
         self.series = series
         self.publishers = publishers
@@ -55,39 +58,54 @@ struct BookBatchEditView: View {
     }
 
     private var availablePeople: [Person] {
-        Dictionary(people.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            .values
-            .sorted {
-                let comparison = $0.sortName.localizedCaseInsensitiveCompare($1.sortName)
-                if comparison != .orderedSame {
-                    return comparison == .orderedAscending
-                }
-                return $0.id.uuidString < $1.id.uuidString
+        Dictionary(
+            people
+                .filter { $0.collectionID == collectionID }
+                .map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        .values
+        .sorted {
+            let comparison = $0.sortName.localizedCaseInsensitiveCompare($1.sortName)
+            if comparison != .orderedSame {
+                return comparison == .orderedAscending
             }
+            return $0.id.uuidString < $1.id.uuidString
+        }
     }
 
     private var availableSeries: [BookSeries] {
-        Dictionary(series.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            .values
-            .sorted {
-                let comparison = $0.name.localizedCaseInsensitiveCompare($1.name)
-                if comparison != .orderedSame {
-                    return comparison == .orderedAscending
-                }
-                return $0.id.uuidString < $1.id.uuidString
+        Dictionary(
+            series
+                .filter { $0.collectionID == collectionID }
+                .map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        .values
+        .sorted {
+            let comparison = $0.name.localizedCaseInsensitiveCompare($1.name)
+            if comparison != .orderedSame {
+                return comparison == .orderedAscending
             }
+            return $0.id.uuidString < $1.id.uuidString
+        }
     }
 
     private var availablePublishers: [Publisher] {
-        Dictionary(publishers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            .values
-            .sorted {
-                let comparison = $0.name.localizedCaseInsensitiveCompare($1.name)
-                if comparison != .orderedSame {
-                    return comparison == .orderedAscending
-                }
-                return $0.id.uuidString < $1.id.uuidString
+        Dictionary(
+            publishers
+                .filter { $0.collectionID == collectionID }
+                .map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        .values
+        .sorted {
+            let comparison = $0.name.localizedCaseInsensitiveCompare($1.name)
+            if comparison != .orderedSame {
+                return comparison == .orderedAscending
             }
+            return $0.id.uuidString < $1.id.uuidString
+        }
     }
 
     var body: some View {
@@ -206,6 +224,7 @@ struct BookBatchEditView: View {
                     ?? .author,
                 person: editingContributorEdit?.person,
                 people: availablePeople,
+                collectionID: collectionID,
                 availableRoles: availableContributorRoles,
                 onClear: { role in
                     clearContributorRole(role)
@@ -396,7 +415,7 @@ struct BookBatchEditView: View {
 
 #if DEBUG
 #Preview {
-    BookBatchEditView { _, _ in }
+    BookBatchEditView(collectionID: UUID()) { _, _ in }
 }
 #endif
 
@@ -418,12 +437,13 @@ extension CatalogCardManagementModifier where Item == BookRecord {
         onDelete: @escaping ([BookRecord]) -> Void,
         onBatchEdit: @escaping ([BookRecord], ItemBatchEdit, BookBatchEdit) -> Void
     ) {
-        let availableSeries: [BookSeries]
-        if let collectionID = collection?.id {
-            availableSeries = snapshot?.bookSeries.filter { $0.collectionID == collectionID } ?? []
-        } else {
-            availableSeries = []
+        guard let collectionID = collection?.id else {
+            preconditionFailure("Book batch editing requires a collection.")
         }
+
+        let availableSeries = snapshot?.bookSeries.filter { $0.collectionID == collectionID } ?? []
+        let availablePeople = snapshot?.people.filter { $0.collectionID == collectionID } ?? []
+        let availablePublishers = snapshot?.publishers.filter { $0.collectionID == collectionID } ?? []
 
         self.init(
             state: state,
@@ -443,9 +463,10 @@ extension CatalogCardManagementModifier where Item == BookRecord {
             batchEditContent: {
                 AnyView(
                     BookBatchEditView(
-                        people: snapshot?.people ?? [],
+                        collectionID: collectionID,
+                        people: availablePeople,
                         series: availableSeries,
-                        publishers: snapshot?.publishers ?? []
+                        publishers: availablePublishers
                     ) { itemEdit, bookEdit in
                         onBatchEdit(
                             state.wrappedValue.selectedItems(in: visibleItems),
