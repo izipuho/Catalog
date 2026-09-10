@@ -4,6 +4,7 @@ import Foundation
 extension CoreDataCatalogRepository {
     func savePerson(_ person: Person) {
         _ = upsertCatalogPerson(person)
+        propagatePerson(person)
         saveContext()
     }
 
@@ -61,6 +62,75 @@ extension CoreDataCatalogRepository {
         entity.setValue(collection, forKey: "collection")
         replacePersonPhotos(person.photos, for: entity)
         return entity
+    }
+
+    private func propagatePerson(_ person: Person) {
+        let request = NSFetchRequest<NSManagedObject>(entityName: "PersonEntity")
+        request.predicate = NSPredicate(
+            format: "canonicalID == %@ AND id != %@",
+            person.canonicalID as NSUUID,
+            person.id as NSUUID
+        )
+
+        let copies = (try? context.fetch(request)) ?? []
+        for copy in copies {
+            guard
+                let id = copy.value(forKey: "id") as? UUID,
+                let collection = copy.value(forKey: "collection") as? NSManagedObject,
+                let collectionID = collection.value(forKey: "id") as? UUID
+            else {
+                continue
+            }
+
+            let synchronized = Person(
+                id: id,
+                canonicalID: person.canonicalID,
+                collectionID: collectionID,
+                givenName: person.givenName,
+                familyName: person.familyName,
+                middleName: person.middleName,
+                birthYear: person.birthYear,
+                deathYear: person.deathYear,
+                biography: person.biography,
+                birthPlace: person.birthPlace,
+                deathPlace: person.deathPlace,
+                photos: synchronizedPersonPhotos(person.photos, for: copy)
+            )
+            _ = upsertCatalogPerson(synchronized)
+        }
+    }
+
+    private func synchronizedPersonPhotos(
+        _ photos: [MediaAsset],
+        for person: NSManagedObject
+    ) -> [MediaAsset] {
+        let existingPhotos = personRelatedObjects(person, "photos")
+            .sorted {
+                CoreDataDomainMapper.intValue($0, "sortOrder")
+                    < CoreDataDomainMapper.intValue($1, "sortOrder")
+            }
+
+        return photos.enumerated().map { index, photo in
+            let existing = existingPhotos.indices.contains(index) ? existingPhotos[index] : nil
+
+            return MediaAsset(
+                id: existing?.value(forKey: "id") as? UUID ?? UUID(),
+                itemID: nil,
+                kind: photo.kind,
+                localIdentifier: existing?.value(forKey: "localIdentifier") as? String ?? UUID().uuidString,
+                displayName: photo.displayName,
+                sortOrder: index,
+                fileName: photo.fileName,
+                mimeType: photo.mimeType,
+                byteSize: photo.byteSize,
+                checksum: photo.checksum,
+                width: photo.width,
+                height: photo.height,
+                duration: photo.duration,
+                metadataJSON: photo.metadataJSON,
+                originalData: photo.originalData ?? existing?.value(forKey: "originalData") as? Data
+            )
+        }
     }
 
     private func replacePersonPhotos(_ photos: [MediaAsset], for person: NSManagedObject) {
