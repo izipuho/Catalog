@@ -63,12 +63,19 @@ enum CoreDataDomainMapper {
     static func person(from entity: NSManagedObject) -> Person {
         precondition(entity.entity.name == "PersonEntity", "CoreDataDomainMapper.person(from:) expects PersonEntity.")
 
+        let id = uuidValue(entity, "id")
+        guard let collectionEntity = entity.value(forKey: "collection") as? NSManagedObject else {
+            preconditionFailure("PersonEntity is missing its CollectionEntity relationship.")
+        }
+
         let photos = relatedObjects(entity, "photos")
             .sorted { intValue($0, "sortOrder") < intValue($1, "sortOrder") }
             .map { mediaAsset(from: $0) }
 
         return Person(
-            id: uuidValue(entity, "id"),
+            id: id,
+            canonicalID: entity.value(forKey: "canonicalID") as? UUID ?? id,
+            collectionID: uuidValue(collectionEntity, "id"),
             givenName: stringValue(entity, "givenName"),
             familyName: optionalStringValue(entity, "familyName"),
             middleName: optionalStringValue(entity, "middleName"),

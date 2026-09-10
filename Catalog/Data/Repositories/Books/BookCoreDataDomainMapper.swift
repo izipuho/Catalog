@@ -71,10 +71,17 @@ extension CoreDataDomainMapper {
             "CoreDataDomainMapper.publisher(from:) expects PublisherEntity."
         )
 
+        let id = uuidValue(entity, "id")
+        guard let collectionEntity = entity.value(forKey: "collection") as? NSManagedObject else {
+            preconditionFailure("PublisherEntity is missing its CollectionEntity relationship.")
+        }
+
         let logoEntity = entity.value(forKey: "logo") as? NSManagedObject
 
         return Publisher(
-            id: uuidValue(entity, "id"),
+            id: id,
+            canonicalID: entity.value(forKey: "canonicalID") as? UUID ?? id,
+            collectionID: uuidValue(collectionEntity, "id"),
             name: stringValue(entity, "name"),
             logo: logoEntity.map { mediaAsset(from: $0) }
         )
