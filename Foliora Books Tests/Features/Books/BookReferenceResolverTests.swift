@@ -8,7 +8,8 @@ struct BookReferenceResolverTests {
         let collectionID = UUID()
         let publisher = Publisher(
             id: UUID(),
-            name: "Éditions Test"
+            name: "Éditions Test",
+            location: nil
         )
         let series = BookSeries(
             id: UUID(),

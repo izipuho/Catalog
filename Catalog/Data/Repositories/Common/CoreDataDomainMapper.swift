@@ -63,6 +63,8 @@ enum CoreDataDomainMapper {
     static func person(from entity: NSManagedObject) -> Person {
         precondition(entity.entity.name == "PersonEntity", "CoreDataDomainMapper.person(from:) expects PersonEntity.")
 
+        let birthPlaceEntity = entity.value(forKey: "birthPlace") as? NSManagedObject
+        let deathPlaceEntity = entity.value(forKey: "deathPlace") as? NSManagedObject
         let photos = relatedObjects(entity, "photos")
             .sorted { intValue($0, "sortOrder") < intValue($1, "sortOrder") }
             .map { mediaAsset(from: $0) }
@@ -75,8 +77,8 @@ enum CoreDataDomainMapper {
             birthYear: optionalIntValue(entity, "birthYear"),
             deathYear: optionalIntValue(entity, "deathYear"),
             biography: entity.value(forKey: "biography") as? String,
-            birthPlace: optionalStringValue(entity, "birthPlace"),
-            deathPlace: optionalStringValue(entity, "deathPlace"),
+            birthPlace: birthPlaceEntity.map(place),
+            deathPlace: deathPlaceEntity.map(place),
             photos: photos
         )
     }

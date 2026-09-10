@@ -51,8 +51,8 @@ struct PeopleView: View {
                     || person.givenName.localizedCaseInsensitiveContains(query)
                     || (person.familyName?.localizedCaseInsensitiveContains(query) ?? false)
                     || (person.middleName?.localizedCaseInsensitiveContains(query) ?? false)
-                    || (person.birthPlace?.localizedCaseInsensitiveContains(query) ?? false)
-                    || (person.deathPlace?.localizedCaseInsensitiveContains(query) ?? false)
+                    || (person.birthPlace?.displayName.localizedCaseInsensitiveContains(query) ?? false)
+                    || (person.deathPlace?.displayName.localizedCaseInsensitiveContains(query) ?? false)
             }
             .sorted { lhs, rhs in
                 let comparison = lhs.sortName.localizedCaseInsensitiveCompare(rhs.sortName)
@@ -104,6 +104,7 @@ struct PeopleView: View {
                 allBookCount: allBooks.filter { book in
                     book.details.contributors.contains { $0.person.id == person.id }
                 }.count,
+                places: catalogSnapshot?.places ?? [],
                 repository: repository,
                 canEditCollection: canEditCollection,
                 accentColor: collection.backgroundStyle.accentColor,
@@ -262,6 +263,7 @@ private struct PersonCard: View {
 /// Displays the editor used to update a person.
 struct PersonEditorView: View {
     private let existingPerson: Person
+    private let places: [Place]
     private let bookCount: Int
     private let onDelete: (() -> Void)?
     private let onSave: (Person) -> Void
@@ -274,18 +276,20 @@ struct PersonEditorView: View {
     @State private var birthYear: String
     @State private var deathYear: String
     @State private var biography: String
-    @State private var birthPlace: String
-    @State private var deathPlace: String
+    @State private var birthPlace: Place?
+    @State private var deathPlace: Place?
     @State private var photos: [MediaAsset]
     @State private var isConfirmingDelete = false
 
     init(
         person: Person,
+        places: [Place],
         bookCount: Int,
         onDelete: (() -> Void)? = nil,
         onSave: @escaping (Person) -> Void
     ) {
         self.existingPerson = person
+        self.places = places
         self.bookCount = bookCount
         self.onDelete = onDelete
         self.onSave = onSave
@@ -295,8 +299,8 @@ struct PersonEditorView: View {
         _birthYear = State(initialValue: person.birthYear.map(String.init) ?? "")
         _deathYear = State(initialValue: person.deathYear.map(String.init) ?? "")
         _biography = State(initialValue: person.biography ?? "")
-        _birthPlace = State(initialValue: person.birthPlace ?? "")
-        _deathPlace = State(initialValue: person.deathPlace ?? "")
+        _birthPlace = State(initialValue: person.birthPlace)
+        _deathPlace = State(initialValue: person.deathPlace)
         _photos = State(initialValue: person.photos)
     }
 
@@ -345,8 +349,19 @@ struct PersonEditorView: View {
                 }
 
                 Section("editor.origin.places") {
-                    TextField("person.field.birth_place", text: $birthPlace)
-                    TextField("person.field.death_place", text: $deathPlace)
+                    PlacePickerField(
+                        title: String(localized: "person.field.birth_place"),
+                        selectedLabel: birthPlace?.displayName ?? String(localized: "common.none"),
+                        places: places,
+                        selectedPlace: $birthPlace
+                    )
+
+                    PlacePickerField(
+                        title: String(localized: "person.field.death_place"),
+                        selectedLabel: deathPlace?.displayName ?? String(localized: "common.none"),
+                        places: places,
+                        selectedPlace: $deathPlace
+                    )
                 }
 
                 if onDelete != nil {
@@ -437,8 +452,8 @@ struct PersonEditorView: View {
             birthYear: optionalYear(birthYear),
             deathYear: optionalYear(deathYear),
             biography: biography.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
-            birthPlace: birthPlace.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
-            deathPlace: deathPlace.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+            birthPlace: birthPlace,
+            deathPlace: deathPlace,
             photos: photos.enumerated().map { index, asset in
                 asset.with(sortOrder: index)
             }

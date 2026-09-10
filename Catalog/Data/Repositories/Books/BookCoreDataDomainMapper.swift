@@ -71,11 +71,13 @@ extension CoreDataDomainMapper {
             "CoreDataDomainMapper.publisher(from:) expects PublisherEntity."
         )
 
+        let locationEntity = entity.value(forKey: "location") as? NSManagedObject
         let logoEntity = entity.value(forKey: "logo") as? NSManagedObject
 
         return Publisher(
             id: uuidValue(entity, "id"),
             name: stringValue(entity, "name"),
+            location: locationEntity.map { place(from: $0) },
             logo: logoEntity.map { mediaAsset(from: $0) }
         )
     }
