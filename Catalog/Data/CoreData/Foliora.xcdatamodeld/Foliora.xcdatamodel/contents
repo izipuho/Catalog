@@ -52,6 +52,8 @@
         <relationship name="home" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="HomeEntity" inverseName="collections" inverseEntity="HomeEntity"/>
         <relationship name="items" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="ItemEntity" inverseName="collection" inverseEntity="ItemEntity"/>
         <relationship name="itemTags" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="ItemTagEntity" inverseName="collection" inverseEntity="ItemTagEntity"/>
+        <relationship name="people" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="PersonEntity" inverseName="collection" inverseEntity="PersonEntity"/>
+        <relationship name="publishers" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="PublisherEntity" inverseName="collection" inverseEntity="PublisherEntity"/>
     </entity>
     <entity name="CollectionLocationEntity" representedClassName="NSManagedObject" syncable="YES">
         <attribute name="id" optional="YES" attributeType="UUID"/>
@@ -136,6 +138,7 @@
         <attribute name="biography" optional="YES" attributeType="String"/>
         <attribute name="birthPlace" optional="YES" attributeType="String"/>
         <attribute name="birthYear" optional="YES" attributeType="Integer 16" usesScalarValueType="NO"/>
+        <attribute name="canonicalID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="deathPlace" optional="YES" attributeType="String"/>
         <attribute name="deathYear" optional="YES" attributeType="Integer 16" usesScalarValueType="NO"/>
         <attribute name="familyName" optional="YES" attributeType="String"/>
@@ -143,6 +146,7 @@
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="middleName" optional="YES" attributeType="String"/>
         <relationship name="bookContributions" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="BookContributorEntity" inverseName="person" inverseEntity="BookContributorEntity"/>
+        <relationship name="collection" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="CollectionEntity" inverseName="people" inverseEntity="CollectionEntity"/>
         <relationship name="photos" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="MediaAssetEntity" inverseName="person" inverseEntity="MediaAssetEntity"/>
     </entity>
     <entity name="PlaceEntity" representedClassName="NSManagedObject" syncable="YES">
@@ -157,10 +161,12 @@
         <relationship name="items" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="ItemEntity" inverseName="originPlace" inverseEntity="ItemEntity"/>
     </entity>
     <entity name="PublisherEntity" representedClassName="NSManagedObject" syncable="YES">
+        <attribute name="canonicalID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="id" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="name" optional="YES" attributeType="String"/>
         <relationship name="books" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="BookEntity" inverseName="publisher" inverseEntity="BookEntity"/>
         <relationship name="bookSeries" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="BookSeriesEntity" inverseName="publisher" inverseEntity="BookSeriesEntity"/>
+        <relationship name="collection" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="CollectionEntity" inverseName="publishers" inverseEntity="CollectionEntity"/>
         <relationship name="logo" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="MediaAssetEntity" inverseName="publisher" inverseEntity="MediaAssetEntity"/>
     </entity>
     <entity name="UserSortOrderEntity" representedClassName="UserSortOrderEntity" syncable="YES" codeGenerationType="class">
