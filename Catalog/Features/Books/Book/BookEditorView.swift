@@ -1049,9 +1049,7 @@ struct BookEditorView: View {
         catalogSeries = snapshot.bookSeries
             .filter { $0.collectionID == collection.id }
         catalogPublishers = snapshot.publishers
-            .filter { $0.collectionID == collection.id }
         catalogPeople = snapshot.people
-            .filter { $0.collectionID == collection.id }
     }
 
     private func saveBook() {
