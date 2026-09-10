@@ -9,8 +9,8 @@ struct Person: Identifiable, Hashable, Codable {
     var birthYear: Int?
     var deathYear: Int?
     var biography: String?
-    var birthPlace: Place?
-    var deathPlace: Place?
+    var birthPlace: String?
+    var deathPlace: String?
     var photos: [MediaAsset] = []
 
     var displayName: String {
@@ -50,8 +50,8 @@ struct Person: Identifiable, Hashable, Codable {
         birthYear: Int?,
         deathYear: Int?,
         biography: String?,
-        birthPlace: Place?,
-        deathPlace: Place?,
+        birthPlace: String?,
+        deathPlace: String?,
         photos: [MediaAsset] = []
     ) {
         self.id = id
@@ -61,12 +61,16 @@ struct Person: Identifiable, Hashable, Codable {
         self.birthYear = birthYear
         self.deathYear = deathYear
         self.biography = biography
-        self.birthPlace = birthPlace
-        self.deathPlace = deathPlace
+        self.birthPlace = Self.normalizedOptionalText(birthPlace)
+        self.deathPlace = Self.normalizedOptionalText(deathPlace)
         self.photos = photos
     }
 
     private static func normalizedNamePart(_ value: String?) -> String? {
+        normalizedOptionalText(value)
+    }
+
+    private static func normalizedOptionalText(_ value: String?) -> String? {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
