@@ -102,7 +102,8 @@ struct BookReferenceResolver {
 
         return Publisher(
             id: UUID(),
-            name: name
+            name: name,
+            location: nil
         )
     }
 

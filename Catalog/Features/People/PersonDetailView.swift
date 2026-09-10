@@ -22,6 +22,7 @@ struct PersonDetailView: View {
     @State private var person: Person
     let books: [BookRecord]
     let allBookCount: Int
+    let places: [Place]
     let repository: any AppRepository
     let canEditCollection: Bool
     let accentColor: Color
@@ -39,6 +40,7 @@ struct PersonDetailView: View {
         person: Person,
         books: [BookRecord],
         allBookCount: Int,
+        places: [Place],
         repository: any AppRepository,
         canEditCollection: Bool,
         accentColor: Color,
@@ -49,6 +51,7 @@ struct PersonDetailView: View {
         _person = State(initialValue: person)
         self.books = books
         self.allBookCount = allBookCount
+        self.places = places
         self.repository = repository
         self.canEditCollection = canEditCollection
         self.accentColor = accentColor
@@ -160,6 +163,7 @@ struct PersonDetailView: View {
         .sheet(isPresented: $isPresentingEditor) {
             PersonEditorView(
                 person: person,
+                places: places,
                 bookCount: allBookCount,
                 onDelete: {
                     repository.deletePerson(personID: person.id)
@@ -208,7 +212,7 @@ struct PersonDetailView: View {
                     if let birthPlace = person.birthPlace {
                         metadataField(
                             title: String(localized: "person.field.birth_place"),
-                            value: birthPlace,
+                            value: birthPlace.displayName,
                             systemImage: "mappin.and.ellipse"
                         )
                     }
@@ -216,7 +220,7 @@ struct PersonDetailView: View {
                     if let deathPlace = person.deathPlace {
                         metadataField(
                             title: String(localized: "person.field.death_place"),
-                            value: deathPlace,
+                            value: deathPlace.displayName,
                             systemImage: "mappin.and.ellipse"
                         )
                     }
@@ -378,6 +382,7 @@ struct PersonDetailView: View {
                 allBookCount: snapshot.bookRecords.filter { book in
                     book.details.contributors.contains { $0.person.id == person.id }
                 }.count,
+                places: snapshot.places,
                 repository: repository,
                 canEditCollection: true,
                 accentColor: collection.backgroundStyle.accentColor,
