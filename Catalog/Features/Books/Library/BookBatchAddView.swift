@@ -77,8 +77,7 @@ struct BookBatchAddView: View {
                         create: { name in
                             Publisher(
                                 id: UUID(),
-                                name: name,
-                                location: nil
+                                name: name
                             )
                         },
                         onCreate: { catalogPublishers.append($0) }
