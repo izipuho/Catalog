@@ -229,8 +229,8 @@ final class CoreDataCatalogRepository: CatalogRepository {
         entity.setValue(person.birthYear, forKey: "birthYear")
         entity.setValue(person.deathYear, forKey: "deathYear")
         entity.setValue(person.biography, forKey: "biography")
-        entity.setValue(person.birthPlace.map(upsertPlace), forKey: "birthPlace")
-        entity.setValue(person.deathPlace.map(upsertPlace), forKey: "deathPlace")
+        entity.setValue(person.birthPlace, forKey: "birthPlace")
+        entity.setValue(person.deathPlace, forKey: "deathPlace")
         return entity
     }
 

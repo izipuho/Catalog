@@ -25,20 +25,9 @@ extension PreviewData {
     }
 
     private static func makeMinimalBookRecords(from core: CoreMinimal) -> [BookRecord] {
-        let publisherLocation = Place(
-            id: UUID(),
-            displayName: "London, United Kingdom",
-            countryCode: "GB",
-            countryName: "United Kingdom",
-            regionName: "England",
-            cityName: "London",
-            latitude: 51.5072,
-            longitude: -0.1276
-        )
         let publisher = Publisher(
             id: UUID(),
             name: "Preview Publisher",
-            location: publisherLocation,
             logo: makePreviewPhoto(
                 resourcePath: "Media/IMG_7502.HEIC",
                 sortOrder: 0
@@ -59,8 +48,8 @@ extension PreviewData {
             birthYear: 1927,
             deathYear: 2014,
             biography: "Preview biography for the primary book author.",
-            birthPlace: nil,
-            deathPlace: nil,
+            birthPlace: "Preview Birth Place",
+            deathPlace: "Preview Death Place",
             photos: [
                 makePreviewPhoto(
                     resourcePath: "Media/IMG_7503.HEIC",
