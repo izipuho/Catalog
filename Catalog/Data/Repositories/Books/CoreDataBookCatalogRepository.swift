@@ -47,6 +47,7 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
 
     func savePublisher(_ publisher: Publisher) {
         _ = upsertPublisher(publisher)
+        propagatePublisher(publisher)
         saveContext()
     }
 
@@ -193,6 +194,61 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
         entity.setValue(collection, forKey: "collection")
         replacePublisherLogo(publisher.logo, for: entity)
         return entity
+    }
+
+    private func propagatePublisher(_ publisher: Publisher) {
+        let request = NSFetchRequest<NSManagedObject>(entityName: "PublisherEntity")
+        request.predicate = NSPredicate(
+            format: "canonicalID == %@ AND id != %@",
+            publisher.canonicalID as NSUUID,
+            publisher.id as NSUUID
+        )
+
+        let copies = (try? context.fetch(request)) ?? []
+        for copy in copies {
+            guard
+                let id = copy.value(forKey: "id") as? UUID,
+                let collection = copy.value(forKey: "collection") as? NSManagedObject,
+                let collectionID = collection.value(forKey: "id") as? UUID
+            else {
+                continue
+            }
+
+            let synchronized = Publisher(
+                id: id,
+                canonicalID: publisher.canonicalID,
+                collectionID: collectionID,
+                name: publisher.name,
+                logo: synchronizedPublisherLogo(publisher.logo, for: copy)
+            )
+            _ = upsertPublisher(synchronized)
+        }
+    }
+
+    private func synchronizedPublisherLogo(
+        _ logo: MediaAsset?,
+        for publisher: NSManagedObject
+    ) -> MediaAsset? {
+        guard let logo else { return nil }
+        let existing = publisher.value(forKey: "logo") as? NSManagedObject
+
+        return MediaAsset(
+            id: existing?.value(forKey: "id") as? UUID ?? UUID(),
+            itemID: nil,
+            kind: logo.kind,
+            localIdentifier: existing?.value(forKey: "localIdentifier") as? String ?? UUID().uuidString,
+            displayName: logo.displayName,
+            sortOrder: 0,
+            fileName: logo.fileName,
+            mimeType: logo.mimeType,
+            byteSize: logo.byteSize,
+            checksum: logo.checksum,
+            width: logo.width,
+            height: logo.height,
+            duration: logo.duration,
+            metadataJSON: logo.metadataJSON,
+            originalData: logo.originalData ?? existing?.value(forKey: "originalData") as? Data
+        )
     }
 
     private func replacePublisherLogo(_ logo: MediaAsset?, for publisher: NSManagedObject) {
