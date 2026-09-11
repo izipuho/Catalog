@@ -220,20 +220,6 @@ final class CoreDataCatalogRepository: CatalogRepository {
         return upsertItemEntity(for: item, in: collection)
     }
 
-    func makePersonEntity(from person: Person) -> NSManagedObject {
-        let entity = makeEntity(named: "PersonEntity")
-        entity.setValue(person.id, forKey: "id")
-        entity.setValue(person.givenName, forKey: "givenName")
-        entity.setValue(person.familyName, forKey: "familyName")
-        entity.setValue(person.middleName, forKey: "middleName")
-        entity.setValue(person.birthYear, forKey: "birthYear")
-        entity.setValue(person.deathYear, forKey: "deathYear")
-        entity.setValue(person.biography, forKey: "biography")
-        entity.setValue(person.birthPlace, forKey: "birthPlace")
-        entity.setValue(person.deathPlace, forKey: "deathPlace")
-        return entity
-    }
-
     private func upsertItemEntity(for item: ItemRecord, in collection: NSManagedObject) -> NSManagedObject {
         let entity = fetchEntity(named: "ItemEntity", by: item.id) ?? makeEntity(named: "ItemEntity")
         apply(item, to: entity)
