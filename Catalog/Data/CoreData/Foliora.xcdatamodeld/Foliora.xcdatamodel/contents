@@ -53,6 +53,7 @@
         <relationship name="items" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="ItemEntity" inverseName="collection" inverseEntity="ItemEntity"/>
         <relationship name="itemTags" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="ItemTagEntity" inverseName="collection" inverseEntity="ItemTagEntity"/>
         <relationship name="people" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="PersonEntity" inverseName="collection" inverseEntity="PersonEntity"/>
+        <relationship name="places" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="PlaceEntity" inverseName="collection" inverseEntity="PlaceEntity"/>
         <relationship name="publishers" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="PublisherEntity" inverseName="collection" inverseEntity="PublisherEntity"/>
     </entity>
     <entity name="CollectionLocationEntity" representedClassName="NSManagedObject" syncable="YES">
@@ -150,6 +151,7 @@
         <relationship name="photos" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="MediaAssetEntity" inverseName="person" inverseEntity="MediaAssetEntity"/>
     </entity>
     <entity name="PlaceEntity" representedClassName="NSManagedObject" syncable="YES">
+        <attribute name="canonicalID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="cityName" optional="YES" attributeType="String"/>
         <attribute name="countryCode" optional="YES" attributeType="String" defaultValueString=""/>
         <attribute name="countryName" optional="YES" attributeType="String" defaultValueString=""/>
@@ -158,6 +160,7 @@
         <attribute name="latitude" optional="YES" attributeType="Double" usesScalarValueType="NO"/>
         <attribute name="longitude" optional="YES" attributeType="Double" usesScalarValueType="NO"/>
         <attribute name="regionName" optional="YES" attributeType="String"/>
+        <relationship name="collection" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="CollectionEntity" inverseName="places" inverseEntity="CollectionEntity"/>
         <relationship name="items" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="ItemEntity" inverseName="originPlace" inverseEntity="ItemEntity"/>
     </entity>
     <entity name="PublisherEntity" representedClassName="NSManagedObject" syncable="YES">
