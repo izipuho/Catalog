@@ -91,7 +91,6 @@
         <relationship name="book" optional="YES" maxCount="1" deletionRule="Cascade" destinationEntity="BookEntity" inverseName="item" inverseEntity="BookEntity"/>
         <relationship name="collection" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="CollectionEntity" inverseName="items" inverseEntity="CollectionEntity"/>
         <relationship name="collectionLocation" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="CollectionLocationEntity" inverseName="items" inverseEntity="CollectionLocationEntity"/>
-        <relationship name="location" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="LocationEntity" inverseName="items" inverseEntity="LocationEntity"/>
         <relationship name="mediaAssets" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="MediaAssetEntity" inverseName="item" inverseEntity="MediaAssetEntity"/>
         <relationship name="originPlace" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="PlaceEntity" inverseName="items" inverseEntity="PlaceEntity"/>
         <relationship name="tags" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="ItemTagEntity" inverseName="items" inverseEntity="ItemTagEntity"/>
@@ -111,7 +110,6 @@
         <attribute name="notes" optional="YES" attributeType="String" defaultValueString=""/>
         <relationship name="children" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="LocationEntity" inverseName="parent" inverseEntity="LocationEntity"/>
         <relationship name="home" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="HomeEntity" inverseName="locations" inverseEntity="HomeEntity"/>
-        <relationship name="items" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="ItemEntity" inverseName="location" inverseEntity="ItemEntity"/>
         <relationship name="parent" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="LocationEntity" inverseName="children" inverseEntity="LocationEntity"/>
     </entity>
     <entity name="MediaAssetEntity" representedClassName="NSManagedObject" syncable="YES">

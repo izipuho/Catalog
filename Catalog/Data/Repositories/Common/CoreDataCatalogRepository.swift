@@ -226,9 +226,7 @@ final class CoreDataCatalogRepository: CatalogRepository {
         entity.setValue(collection, forKey: "collection")
 
         let collectionLocation = item.locationID.flatMap { fetchCollectionLocation(in: collection, by: $0) }
-        let sourceLocationID = collectionLocation?.value(forKey: "sourceLocationID") as? UUID
         entity.setValue(collectionLocation, forKey: "collectionLocation")
-        entity.setValue(sourceLocationID.flatMap { fetchEntity(named: "LocationEntity", by: $0) }, forKey: "location")
         entity.setValue(item.originPlace.map(upsertPlace), forKey: "originPlace")
         upsertMediaAssets(item.mediaAssets, for: entity)
         replaceTags(item.tags, for: entity)
@@ -477,16 +475,6 @@ final class CoreDataCatalogRepository: CatalogRepository {
                 entity.setValue(true, forKey: "isArchived")
                 entity.setValue(nil, forKey: "parent")
             }
-        }
-
-        backfillItemCollectionLocations(in: collection)
-    }
-
-    private func backfillItemCollectionLocations(in collection: NSManagedObject) {
-        for item in relatedObjects(collection, "items") {
-            guard item.value(forKey: "collectionLocation") == nil else { continue }
-            guard let location = item.value(forKey: "location") as? NSManagedObject else { continue }
-            item.setValue(fetchCollectionLocation(in: collection, by: uuidValue(location, "id")), forKey: "collectionLocation")
         }
     }
 

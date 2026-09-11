@@ -300,7 +300,6 @@ final class CatalogImportExportActor {
                 with: transferItem,
                 collection: collectionEntities[transferItem.item.collectionID],
                 collectionLocation: transferItem.item.locationID.flatMap { collectionLocationEntities[transferItem.item.collectionID]?[$0] },
-                location: transferItem.item.locationID.flatMap { locationEntities[$0] },
                 originPlace: transferItem.originPlace.flatMap { placeEntitiesByOriginPlace[$0] }
             )
             itemEntitiesByID[transferItem.item.id] = itemEntity
@@ -496,7 +495,6 @@ final class CatalogImportExportActor {
                 with: transferItem,
                 collection: collectionEntity,
                 collectionLocation: transferItem.item.locationID.flatMap { collectionLocationEntities[transferItem.item.collectionID]?[$0] },
-                location: transferItem.item.locationID.flatMap { locationEntities[$0] },
                 originPlace: originPlace
             )
             itemEntitiesByCollectionAndID[localCollectionID, default: [:]][transferItem.item.id] = itemEntity
@@ -777,7 +775,6 @@ final class CatalogImportExportActor {
         with transferItem: CatalogTransferItem,
         collection: NSManagedObject?,
         collectionLocation: NSManagedObject?,
-        location: NSManagedObject?,
         originPlace: NSManagedObject?
     ) {
         entity.setValue(transferItem.item.id, forKey: "id")
@@ -791,7 +788,6 @@ final class CatalogImportExportActor {
         entity.setValue(transferItem.item.isFavorite, forKey: "isFavorite")
         entity.setValue(collection, forKey: "collection")
         entity.setValue(collectionLocation, forKey: "collectionLocation")
-        entity.setValue(location, forKey: "location")
         entity.setValue(originPlace, forKey: "originPlace")
     }
 
