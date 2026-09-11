@@ -227,15 +227,45 @@ final class CoreDataCatalogRepository: CatalogRepository {
 
         let collectionLocation = item.locationID.flatMap { fetchCollectionLocation(in: collection, by: $0) }
         entity.setValue(collectionLocation, forKey: "collectionLocation")
-        entity.setValue(item.originPlace.map(upsertPlace), forKey: "originPlace")
+        entity.setValue(item.originPlace.map { upsertPlace($0, in: collection) }, forKey: "originPlace")
         upsertMediaAssets(item.mediaAssets, for: entity)
         replaceTags(item.tags, for: entity)
         return entity
     }
 
-    private func upsertPlace(_ place: Place) -> NSManagedObject {
-        let entity = fetchEntity(named: "PlaceEntity", by: place.id) ?? makeEntity(named: "PlaceEntity")
-        entity.setValue(place.id, forKey: "id")
+    private func upsertPlace(_ place: Place, in collection: NSManagedObject) -> NSManagedObject {
+        let collectionID = uuidValue(collection, "id")
+        let existingByID = fetchEntity(named: "PlaceEntity", by: place.id)
+        let existingLocal = fetchEntities(
+            named: "PlaceEntity",
+            predicate: NSPredicate(
+                format: "canonicalID == %@ AND collection == %@",
+                place.canonicalID as NSUUID,
+                collection
+            ),
+            fetchLimit: 1
+        ).first
+
+        let canReusePhysicalID = place.collectionID == collectionID || existingByID == nil
+        let reusableByID: NSManagedObject? = {
+            guard canReusePhysicalID, let existingByID else { return nil }
+            if let existingCollection = existingByID.value(forKey: "collection") as? NSManagedObject,
+               existingCollection != collection {
+                return nil
+            }
+            return existingByID
+        }()
+
+        let entity = existingLocal ?? reusableByID ?? makeEntity(named: "PlaceEntity")
+        if entity.objectID.persistentStore == nil,
+           let store = collection.objectID.persistentStore {
+            context.assign(entity, to: store)
+        }
+
+        if entity.value(forKey: "id") == nil {
+            entity.setValue(canReusePhysicalID ? place.id : UUID(), forKey: "id")
+        }
+        entity.setValue(place.canonicalID, forKey: "canonicalID")
         entity.setValue(place.displayName, forKey: "displayName")
         entity.setValue(place.countryCode, forKey: "countryCode")
         entity.setValue(place.countryName, forKey: "countryName")
@@ -243,6 +273,7 @@ final class CoreDataCatalogRepository: CatalogRepository {
         entity.setValue(place.cityName, forKey: "cityName")
         entity.setValue(place.latitude, forKey: "latitude")
         entity.setValue(place.longitude, forKey: "longitude")
+        entity.setValue(collection, forKey: "collection")
         return entity
     }
 
