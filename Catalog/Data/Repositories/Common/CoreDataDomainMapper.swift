@@ -48,8 +48,17 @@ enum CoreDataDomainMapper {
     }
 
     static func place(from entity: NSManagedObject) -> Place {
-        Place(
-            id: uuidValue(entity, "id"),
+        precondition(entity.entity.name == "PlaceEntity", "CoreDataDomainMapper.place(from:) expects PlaceEntity.")
+
+        let id = uuidValue(entity, "id")
+        let collectionID = (entity.value(forKey: "collection") as? NSManagedObject).map {
+            uuidValue($0, "id")
+        }
+
+        return Place(
+            id: id,
+            canonicalID: entity.value(forKey: "canonicalID") as? UUID ?? id,
+            collectionID: collectionID,
             displayName: stringValue(entity, "displayName"),
             countryCode: stringValue(entity, "countryCode"),
             countryName: stringValue(entity, "countryName"),

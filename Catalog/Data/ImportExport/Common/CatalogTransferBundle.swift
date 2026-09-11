@@ -150,6 +150,7 @@ struct LocationTransferRecord: Identifiable, Hashable, Codable {
 
 /// Represents origin place transfer value data and behavior.
 struct OriginPlaceTransferValue: Hashable, Codable {
+    var canonicalID: UUID?
     var displayName: String
     var latitude: Double
     var longitude: Double
@@ -159,6 +160,7 @@ struct OriginPlaceTransferValue: Hashable, Codable {
             return nil
         }
 
+        canonicalID = place.canonicalID
         displayName = place.displayName
         self.latitude = latitude
         self.longitude = longitude
