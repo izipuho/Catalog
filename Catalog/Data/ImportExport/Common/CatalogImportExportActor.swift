@@ -277,30 +277,28 @@ final class CatalogImportExportActor {
             }
         }
 
-        var placeEntitiesByOriginPlace: [OriginPlaceTransferValue: NSManagedObject] = [:]
-
-        for originPlace in bundle.items.compactMap(\.originPlace) {
-            guard placeEntitiesByOriginPlace[originPlace] == nil else { continue }
-
-            let entity = makeEntity(named: "PlaceEntity")
-            entity.setValue(UUID(), forKey: "id")
-            entity.setValue(originPlace.displayName, forKey: "displayName")
-            entity.setValue(originPlace.latitude, forKey: "latitude")
-            entity.setValue(originPlace.longitude, forKey: "longitude")
-            placeEntitiesByOriginPlace[originPlace] = entity
-        }
-
+        var materializedPlaces: [PlaceImportKey: NSManagedObject] = [:]
+        var fallbackCanonicalIDs: [OriginPlaceTransferValue: UUID] = [:]
         var tagEntitiesByCollectionAndName: [UUID: [String: NSManagedObject]] = [:]
         var itemEntitiesByID: [UUID: NSManagedObject] = [:]
 
         for transferItem in bundle.items {
+            guard let collectionEntity = collectionEntities[transferItem.item.collectionID] else { continue }
+            let originPlace = transferItem.originPlace.map {
+                materializeImportedPlace(
+                    $0,
+                    in: collectionEntity,
+                    materializedPlaces: &materializedPlaces,
+                    fallbackCanonicalIDs: &fallbackCanonicalIDs
+                )
+            }
             let itemEntity = makeEntity(named: "ItemEntity")
             updateItemEntity(
                 itemEntity,
                 with: transferItem,
-                collection: collectionEntities[transferItem.item.collectionID],
+                collection: collectionEntity,
                 collectionLocation: transferItem.item.locationID.flatMap { collectionLocationEntities[transferItem.item.collectionID]?[$0] },
-                originPlace: transferItem.originPlace.flatMap { placeEntitiesByOriginPlace[$0] }
+                originPlace: originPlace
             )
             itemEntitiesByID[transferItem.item.id] = itemEntity
 
@@ -313,8 +311,6 @@ final class CatalogImportExportActor {
 
             var seenNormalizedNames = Set<String>()
             let tagEntities = transferItem.tags.enumerated().compactMap { index, tag -> NSManagedObject? in
-                guard let collectionEntity = collectionEntities[transferItem.item.collectionID] else { return nil }
-
                 let normalizedName = normalizedTagName(tag)
                 guard !normalizedName.isEmpty, seenNormalizedNames.insert(normalizedName).inserted else { return nil }
 
@@ -449,26 +445,8 @@ final class CatalogImportExportActor {
             }
         }
 
-        var placeEntitiesByCoordinate: [PlaceKey: NSManagedObject] = indexed(try fetchEntities(named: "PlaceEntity")) { entity in
-            guard
-                let latitude = optionalDoubleValue(entity, "latitude"),
-                let longitude = optionalDoubleValue(entity, "longitude")
-            else { return nil }
-            return PlaceKey(latitude: latitude, longitude: longitude)
-        }
-
-        for originPlace in bundle.items.compactMap(\.originPlace) {
-            let key = PlaceKey(latitude: originPlace.latitude, longitude: originPlace.longitude)
-            guard placeEntitiesByCoordinate[key] == nil else { continue }
-
-            let entity = makeEntity(named: "PlaceEntity")
-            ensureID(entity)
-            entity.setValue(originPlace.displayName, forKey: "displayName")
-            entity.setValue(originPlace.latitude, forKey: "latitude")
-            entity.setValue(originPlace.longitude, forKey: "longitude")
-            placeEntitiesByCoordinate[key] = entity
-        }
-
+        var materializedPlaces: [PlaceImportKey: NSManagedObject] = [:]
+        var fallbackCanonicalIDs: [OriginPlaceTransferValue: UUID] = [:]
         var tagEntitiesByCollectionAndName: [UUID: [String: NSManagedObject]] = [:]
         for entity in try fetchEntities(named: "ItemTagEntity") {
             guard let collection = entity.value(forKey: "collection") as? NSManagedObject else { continue }
@@ -486,8 +464,13 @@ final class CatalogImportExportActor {
         for transferItem in bundle.items {
             guard let collectionEntity = collectionEntities[transferItem.item.collectionID] else { continue }
             let localCollectionID = uuidValue(collectionEntity, "id")
-            let originPlace = transferItem.originPlace.flatMap {
-                placeEntitiesByCoordinate[PlaceKey(latitude: $0.latitude, longitude: $0.longitude)]
+            let originPlace = transferItem.originPlace.map {
+                materializeImportedPlace(
+                    $0,
+                    in: collectionEntity,
+                    materializedPlaces: &materializedPlaces,
+                    fallbackCanonicalIDs: &fallbackCanonicalIDs
+                )
             }
             let itemEntity = itemEntitiesByCollectionAndID[localCollectionID]?[transferItem.item.id] ?? makeEntity(named: "ItemEntity")
             updateItemEntity(
@@ -689,9 +672,9 @@ final class CatalogImportExportActor {
         var sourceLocationID: UUID
     }
 
-    private struct PlaceKey: Hashable {
-        var latitude: Double
-        var longitude: Double
+    private struct PlaceImportKey: Hashable {
+        var collectionID: UUID
+        var canonicalID: UUID
     }
 
     private func locationKey(for entity: NSManagedObject) -> LocationKey? {
@@ -755,6 +738,69 @@ final class CatalogImportExportActor {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             .lowercased()
+    }
+
+    private func materializeImportedPlace(
+        _ originPlace: OriginPlaceTransferValue,
+        in collection: NSManagedObject,
+        materializedPlaces: inout [PlaceImportKey: NSManagedObject],
+        fallbackCanonicalIDs: inout [OriginPlaceTransferValue: UUID]
+    ) -> NSManagedObject {
+        let collectionID = uuidValue(collection, "id")
+        var coordinateMatch: NSManagedObject?
+        let canonicalID: UUID
+
+        if let importedCanonicalID = originPlace.canonicalID {
+            canonicalID = importedCanonicalID
+        } else {
+            let request = NSFetchRequest<NSManagedObject>(entityName: "PlaceEntity")
+            request.fetchLimit = 1
+            request.predicate = NSPredicate(
+                format: "collection == %@ AND latitude == %lf AND longitude == %lf",
+                collection,
+                originPlace.latitude,
+                originPlace.longitude
+            )
+            coordinateMatch = (try? context.fetch(request))?.first
+
+            if let coordinateMatch {
+                let id = uuidValue(coordinateMatch, "id")
+                canonicalID = coordinateMatch.value(forKey: "canonicalID") as? UUID ?? id
+            } else if let fallbackCanonicalID = fallbackCanonicalIDs[originPlace] {
+                canonicalID = fallbackCanonicalID
+            } else {
+                canonicalID = UUID()
+            }
+            fallbackCanonicalIDs[originPlace] = canonicalID
+        }
+
+        let key = PlaceImportKey(collectionID: collectionID, canonicalID: canonicalID)
+        if let cached = materializedPlaces[key] {
+            return cached
+        }
+
+        let request = NSFetchRequest<NSManagedObject>(entityName: "PlaceEntity")
+        request.fetchLimit = 1
+        request.predicate = NSPredicate(
+            format: "canonicalID == %@ AND collection == %@",
+            canonicalID as NSUUID,
+            collection
+        )
+        let existingCanonical = (try? context.fetch(request))?.first
+        let entity = existingCanonical ?? coordinateMatch ?? makeEntity(named: "PlaceEntity")
+
+        if entity.objectID.persistentStore == nil,
+           let store = collection.objectID.persistentStore {
+            context.assign(entity, to: store)
+        }
+        ensureID(entity)
+        entity.setValue(canonicalID, forKey: "canonicalID")
+        entity.setValue(originPlace.displayName, forKey: "displayName")
+        entity.setValue(originPlace.latitude, forKey: "latitude")
+        entity.setValue(originPlace.longitude, forKey: "longitude")
+        entity.setValue(collection, forKey: "collection")
+        materializedPlaces[key] = entity
+        return entity
     }
 
     private func indexed<Key: Hashable, Entities: Sequence>(
