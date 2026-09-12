@@ -19,10 +19,9 @@ private struct CatalogMultiPhotoCreationDialogModifier: ViewModifier {
         let separateItemsFormat = String(localized: "batch_add.import.separate_items_count")
 
         content
-            .confirmationDialog(
+            .alert(
                 String(format: addPhotosFormat, locale: .autoupdatingCurrent, photoCount),
-                isPresented: $isPresented,
-                titleVisibility: .visible
+                isPresented: $isPresented
             ) {
                 Button(String(format: singleItemFormat, locale: .autoupdatingCurrent, photoCount)) {
                     didSelectMode = true
@@ -33,6 +32,8 @@ private struct CatalogMultiPhotoCreationDialogModifier: ViewModifier {
                     didSelectMode = true
                     onSelect(.batch)
                 }
+
+                Button(String(localized: "common.cancel"), role: .cancel) {}
             }
             .onChange(of: isPresented) { _, isPresented in
                 if isPresented {
