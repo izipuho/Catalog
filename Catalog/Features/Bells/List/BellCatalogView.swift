@@ -84,7 +84,7 @@ private extension BellFilters {
 
 /// Displays the bell catalog view interface.
 struct BellCatalogView: View {
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let collection: CollectionSummary?
     let catalogSnapshot: CatalogSnapshot?
     let sharingState: CollectionSharingState
@@ -109,7 +109,7 @@ struct BellCatalogView: View {
 
     init(
         collection: CollectionSummary?,
-        repository: any CatalogRepository,
+        repository: any AppRepository,
         catalogSnapshot: CatalogSnapshot?,
         layoutMode: Binding<CatalogCardLayoutMode> = .constant(.mini),
         orderMode: Binding<BellOrderMode> = .constant(.newestFirst),
@@ -589,7 +589,7 @@ struct BellCatalogView: View {
         let location = storageContext.location(for: locationID)
         for bell in bells {
             guard let record = catalogSnapshot?.recordsByID[bell.id] else { continue }
-            (repository as! any BellCatalogRepository).saveBellRecord(
+            repository.saveBellRecord(
                 record.moving(
                     to: location,
                     storagePath: location.map(storageContext.storagePath(for:))
@@ -612,7 +612,7 @@ struct BellCatalogView: View {
         }
         guard !updatedRecords.isEmpty else { return }
 
-        (repository as! any BellCatalogRepository).saveBellRecords(updatedRecords)
+        repository.saveBellRecords(updatedRecords)
         emitFeedback(.success)
     }
 
@@ -620,7 +620,7 @@ struct BellCatalogView: View {
         guard canEditCollection else { return }
 
         for bell in bells {
-            (repository as! any BellCatalogRepository).deleteBellRecord(bellID: bell.id)
+            repository.deleteBellRecord(bellID: bell.id)
         }
 
         emitFeedback(.warning)

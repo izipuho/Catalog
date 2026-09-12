@@ -4,7 +4,7 @@ import SwiftUI
 struct BellDetailView: View {
 
     @Binding var bell: BellRecord
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let catalogSnapshot: CatalogSnapshot?
     let canEditCollection: Bool
     let canChangeFavorite: Bool
@@ -25,7 +25,7 @@ struct BellDetailView: View {
 
     init(
         bell: Binding<BellRecord>,
-        repository: any CatalogRepository,
+        repository: any AppRepository,
         catalogSnapshot: CatalogSnapshot?,
         canEditCollection: Bool,
         canChangeFavorite: Bool = false,
@@ -86,7 +86,7 @@ struct BellDetailView: View {
                         catalogSnapshot: catalogSnapshot,
                         bell: bell
                     ) { updatedBell in
-                        (repository as! any BellCatalogRepository).saveBellRecord(updatedBell)
+                        repository.saveBellRecord(updatedBell)
                         bell = updatedBell
                         syncDraftsFromBell()
                     }
@@ -574,7 +574,7 @@ struct BellDetailView: View {
     private func save(_ item: ItemRecord) {
         let updatedBell = BellRecord(item: item, details: bell.details)
         bell = updatedBell
-        (repository as! any BellCatalogRepository).saveBellRecord(updatedBell)
+        repository.saveBellRecord(updatedBell)
     }
 
     private func storagePath(for location: Location, locationsByID: [UUID: Location]) -> StoragePath {
@@ -603,11 +603,11 @@ struct BellDetailView: View {
 
 private struct BellDetailPreviewHost: View {
     let initialBell: BellRecord
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let catalogSnapshot: CatalogSnapshot?
     @State private var bell: BellRecord
 
-    init(bell: BellRecord, repository: any CatalogRepository, catalogSnapshot: CatalogSnapshot?) {
+    init(bell: BellRecord, repository: any AppRepository, catalogSnapshot: CatalogSnapshot?) {
         self.initialBell = bell
         self.repository = repository
         self.catalogSnapshot = catalogSnapshot

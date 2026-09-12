@@ -6,7 +6,7 @@ import CoreData
 struct BellCollectionView: View {
     let catalogSnapshot: CatalogSnapshot?
     let collection: CollectionSummary
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let coreDataContainer: NSPersistentCloudKitContainer
     private let onBellSelected: ((UUID) -> Void)?
     private let onBatchAddComplete: (BatchAddCompletionAction) -> Void
@@ -35,7 +35,7 @@ struct BellCollectionView: View {
     init(
         collection: CollectionSummary,
         catalogSnapshot: CatalogSnapshot?,
-        repository: any CatalogRepository,
+        repository: any AppRepository,
         coreDataContainer: NSPersistentCloudKitContainer,
         layoutMode: Binding<CatalogCardLayoutMode>,
         onBellSelected: ((UUID) -> Void)? = nil,
@@ -251,7 +251,7 @@ struct BellCollectionView: View {
             initialMediaAssets: draftMediaAssets,
             initialAnalysisImage: draftAnalysisImage
         ) { newBell in
-            (repository as! any BellCatalogRepository).saveBellRecord(newBell)
+            repository.saveBellRecord(newBell)
         }
     }
 
