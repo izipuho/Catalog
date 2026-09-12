@@ -1,5 +1,6 @@
 import SwiftUI
 import CloudKit
+import CoreData
 
 /// Displays the collections view interface.
 struct CollectionsView: View {
@@ -9,8 +10,9 @@ struct CollectionsView: View {
     let navigate: ((AppDestination) -> Void)?
     let onOpenHomes: () -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var collectionAppLinkRouter = CollectionAppLinkRouter.shared
     @State private var collectionSharingStatuses: [UUID: CollectionCardSharingStatus] = [:]
-    @State private var collectionBackgroundBellIDs: [UUID: UUID] = [:]
+    @State private var collectionBackgroundItemIDs: [UUID: UUID] = [:]
     @State private var isPresentingAddCollectionEditor = false
     @State private var didAutoOpenSingleCollection = false
     @State private var collectionIDPendingDeletion: UUID?
@@ -48,13 +50,13 @@ struct CollectionsView: View {
     }
 
     private var backgroundCandidateIDs: [UUID] {
-        catalogSnapshot?.bells
-            .filter {
-                $0.isFavorite
-                    && ($0.coverPhotoIdentifier != nil || $0.coverPhotoOriginalData != nil)
-            }
-            .map(\.id)
-            .sorted { $0.uuidString < $1.uuidString } ?? []
+        guard let itemEntities = catalogSnapshot?.itemEntities else { return [] }
+
+        let favoriteItemIDs = itemEntities.compactMap { itemEntity in
+            CollectionBackgroundItem(itemEntity: itemEntity)?.id
+        }
+
+        return favoriteItemIDs.sorted { $0.uuidString < $1.uuidString }
     }
 
     var body: some View {
@@ -66,6 +68,7 @@ struct CollectionsView: View {
                     .ignoresSafeArea()
             }
             .onAppear {
+                handlePendingCollectionDeepLink()
                 autoOpenSingleCollectionIfNeeded()
                 refreshCollectionBackgroundBells()
             }
@@ -73,8 +76,12 @@ struct CollectionsView: View {
                 await loadCollectionSharingStatuses(for: collections.map(\.id))
             }
             .onChange(of: collections.map(\.id)) { _, _ in
+                handlePendingCollectionDeepLink()
                 autoOpenSingleCollectionIfNeeded()
                 refreshCollectionBackgroundBells()
+            }
+            .onChange(of: collectionAppLinkRouter.pendingCollectionID) { _, _ in
+                handlePendingCollectionDeepLink()
             }
             .onChange(of: backgroundCandidateIDs) { _, _ in
                 refreshCollectionBackgroundBells()
@@ -212,7 +219,7 @@ struct CollectionsView: View {
             CollectionCard(
                 collection: collection,
                 sharingStatus: sharingStatus(for: collection.id),
-                backgroundBell: backgroundBell(for: collection.id)
+                backgroundItem: backgroundItem(for: collection.id)
             )
             .catalogContainerListRow()
         } else {
@@ -222,7 +229,7 @@ struct CollectionsView: View {
                 CollectionCard(
                     collection: collection,
                     sharingStatus: sharingStatus(for: collection.id),
-                    backgroundBell: backgroundBell(for: collection.id)
+                    backgroundItem: backgroundItem(for: collection.id)
                 )
             }
             .buttonStyle(.plain)
@@ -248,35 +255,33 @@ struct CollectionsView: View {
                     Button {
                         collectionPendingSharing = collection
                     } label: {
-                        Label(String(localized: "collection.sharing.swipe_action"), systemImage: "square.and.arrow.up")
+                        Label(String(localized: "common.share"), systemImage: "square.and.arrow.up")
                     }
                 }
             }
         }
     }
 
-    private func backgroundCandidates(for collectionID: UUID) -> [BellListItem] {
-        catalogSnapshot?.bells.filter {
-            $0.collectionID == collectionID
-                && $0.isFavorite
-                && ($0.coverPhotoIdentifier != nil || $0.coverPhotoOriginalData != nil)
+    private func backgroundCandidates(for collectionID: UUID) -> [CollectionBackgroundItem] {
+        catalogSnapshot?.itemEntities.compactMap { itemEntity in
+            CollectionBackgroundItem(itemEntity: itemEntity, collectionID: collectionID)
         } ?? []
     }
 
-    private func backgroundBell(for collectionID: UUID) -> BellListItem? {
+    private func backgroundItem(for collectionID: UUID) -> CollectionBackgroundItem? {
         let candidates = backgroundCandidates(for: collectionID)
         guard !candidates.isEmpty else { return nil }
 
-        if let selectedID = collectionBackgroundBellIDs[collectionID],
-           let selectedBell = candidates.first(where: { $0.id == selectedID }) {
-            return selectedBell
+        if let selectedID = collectionBackgroundItemIDs[collectionID],
+           let selectedItem = candidates.first(where: { $0.id == selectedID }) {
+            return selectedItem
         }
 
         return candidates.first
     }
 
     private func refreshCollectionBackgroundBells() {
-        var updatedIDs = collectionBackgroundBellIDs
+        var updatedIDs = collectionBackgroundItemIDs
         let collectionIDs = Set(collections.map(\.id))
         updatedIDs = updatedIDs.filter { collectionIDs.contains($0.key) }
 
@@ -291,7 +296,7 @@ struct CollectionsView: View {
             updatedIDs[collection.id] = candidates.randomElement()?.id
         }
 
-        collectionBackgroundBellIDs = updatedIDs
+        collectionBackgroundItemIDs = updatedIDs
     }
 
     @ViewBuilder
@@ -360,7 +365,7 @@ struct CollectionsView: View {
         let collection = Collection(
             id: UUID(),
             homeID: homeID,
-            kind: .bells,
+            kind: CollectionAppLink.currentAppKind,
             title: trimmedTitle.isEmpty ? String(localized: "collection.editor.default_title") : trimmedTitle,
             notes: trimmedNotes,
             backgroundStyle: backgroundStyle
@@ -371,6 +376,11 @@ struct CollectionsView: View {
     }
 
     private func selectCollection(_ collection: CollectionSummary) {
+        guard collection.kind == CollectionAppLink.currentAppKind else {
+            CollectionAppLink.open(kind: collection.kind, collectionID: collection.id)
+            return
+        }
+
         if let onCollectionSelected {
             onCollectionSelected(collection.id)
             return
@@ -444,9 +454,22 @@ struct CollectionsView: View {
         guard !didAutoOpenSingleCollection else { return }
         guard collections.count == 1 else { return }
         guard let collection = collections.first else { return }
+        guard collection.kind == CollectionAppLink.currentAppKind else { return }
 
         didAutoOpenSingleCollection = true
         navigate?(.collection(collection.id))
+    }
+
+    private func handlePendingCollectionDeepLink() {
+        guard let collectionID = collectionAppLinkRouter.pendingCollectionID,
+              let collection = collections.first(where: { $0.id == collectionID }),
+              collection.kind == CollectionAppLink.currentAppKind
+        else {
+            return
+        }
+
+        collectionAppLinkRouter.consume(collectionID)
+        navigate?(.collection(collectionID))
     }
 
     private func sharingStatus(for collectionID: UUID) -> CollectionCardSharingStatus {
@@ -582,8 +605,8 @@ private enum CollectionCardSharingStatus {
 }
 
 #if DEBUG
-#Preview {
-    let container = PreviewContainer.make(.minimal)
+#Preview("Mixed Collections") {
+    let container = PreviewContainer.make(.collectionsMinimal)
     let repository = CoreDataCatalogRepository(
         context: container.viewContext,
         persistentContainer: nil
@@ -602,7 +625,7 @@ private enum CollectionCardSharingStatus {
 private struct CollectionCard: View {
     let collection: CollectionSummary
     let sharingStatus: CollectionCardSharingStatus
-    let backgroundBell: BellListItem?
+    let backgroundItem: CollectionBackgroundItem?
 
     var body: some View {
         HStack(alignment: .center, spacing: CatalogMetrics.Spacing.md) {
@@ -627,8 +650,8 @@ private struct CollectionCard: View {
         .contentShape(Rectangle())
         .padding(CatalogMetrics.Spacing.lg)
         .background {
-            if let backgroundBell {
-                CollectionPhotoBackground(bell: backgroundBell)
+            if let backgroundItem {
+                CollectionPhotoBackground(item: backgroundItem)
                     .clipShape(CatalogShapes.section)
             }
         }
@@ -670,7 +693,7 @@ private struct CollectionCard: View {
 }
 
 private struct CollectionPhotoBackground: View {
-    let bell: BellListItem
+    let item: CollectionBackgroundItem
 
     var body: some View {
         GeometryReader { proxy in
@@ -678,8 +701,8 @@ private struct CollectionPhotoBackground: View {
             let photoSize = CGSize(width: photoWidth, height: proxy.size.height)
 
             MediaPreviewImage(
-                identifier: bell.coverPhotoIdentifier,
-                originalData: bell.coverPhotoOriginalData,
+                identifier: item.coverPhotoIdentifier,
+                originalData: item.coverPhotoOriginalData,
                 size: photoSize
             )
             .frame(width: photoWidth, height: proxy.size.height)
@@ -699,5 +722,48 @@ private struct CollectionPhotoBackground: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         }
         .allowsHitTesting(false)
+    }
+}
+
+private struct CollectionBackgroundItem: Identifiable, Hashable {
+    let id: UUID
+    let coverPhotoIdentifier: String?
+    let coverPhotoOriginalData: Data?
+
+    init?(itemEntity: NSManagedObject, collectionID: UUID? = nil) {
+        guard itemEntity.value(forKey: "isFavorite") as? Bool == true else { return nil }
+
+        if let collectionID {
+            guard
+                let itemCollection = itemEntity.value(forKey: "collection") as? NSManagedObject,
+                itemCollection.value(forKey: "id") as? UUID == collectionID
+            else {
+                return nil
+            }
+        }
+
+        let mediaAssets = (itemEntity.value(forKey: "mediaAssets") as? Set<NSManagedObject>) ?? []
+        guard let coverPhoto = mediaAssets
+            .filter({ ($0.value(forKey: "kind") as? String) == MediaKind.photo.rawValue })
+            .sorted(by: { Self.sortOrder($0) < Self.sortOrder($1) })
+            .first
+        else {
+            return nil
+        }
+
+        let identifier = coverPhoto.value(forKey: "localIdentifier") as? String
+        let originalData = coverPhoto.value(forKey: "originalData") as? Data
+        guard identifier != nil || originalData != nil else { return nil }
+
+        self.id = itemEntity.value(forKey: "id") as? UUID ?? UUID()
+        self.coverPhotoIdentifier = identifier
+        self.coverPhotoOriginalData = originalData
+    }
+
+    private static func sortOrder(_ entity: NSManagedObject) -> Int {
+        if let value = entity.value(forKey: "sortOrder") as? Int {
+            return value
+        }
+        return (entity.value(forKey: "sortOrder") as? NSNumber)?.intValue ?? 0
     }
 }

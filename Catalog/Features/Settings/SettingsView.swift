@@ -1,6 +1,7 @@
 import CloudKit
 import CoreData
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Displays the settings view interface.
 struct SettingsView: View {
@@ -332,13 +333,13 @@ struct SettingsView: View {
         let collectionIDs = Set(collections.map(\.id))
         let homeIDs = Set(collections.map(\.homeID))
         let homes = bundle.homes.filter { homeIDs.contains($0.id) }
-        let bellItems = bundle.bellItems.filter {
+        let items = bundle.items.filter {
             collectionIDs.contains($0.item.collectionID)
         }
         let parts = [
             importSummaryPart(count: homes.count, key: "settings.import.result.homes"),
             importSummaryPart(count: collections.count, key: "settings.import.result.collections"),
-            importSummaryPart(count: bellItems.count, key: "settings.import.result.bells")
+            importSummaryPart(count: items.count, key: "settings.import.result.bells")
         ].compactMap { $0 }
 
         return parts.joined(separator: ", ")
@@ -382,7 +383,7 @@ struct SettingsView: View {
 
 #if DEBUG
 #Preview {
-    let container = PreviewContainer.make(.minimal)
+    let container = PreviewContainer.make(.coreMinimal)
     let repository = CoreDataCatalogRepository(
         context: container.viewContext,
         persistentContainer: nil

@@ -1,6 +1,8 @@
 import SwiftUI
 import CoreData
 
+private typealias BatchCompletionHandler = (Any) -> Void
+
 /// Defines the supported app destination values.
 enum AppDestination: Hashable {
     case collection(UUID)
@@ -46,7 +48,7 @@ enum RootTab: String, CaseIterable, Identifiable, Hashable {
 
 /// Displays the app shell view interface.
 struct AppShellView: View {
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let coreDataContainer: NSPersistentCloudKitContainer
     @Environment(\.managedObjectContext) private var managedObjectContext
     @State private var catalogSnapshot: CatalogSnapshot?
@@ -69,11 +71,11 @@ struct AppShellView: View {
             settingsPath: $settingsPath,
             searchPath: $searchPath,
             displayName: $displayName,
-            destination: { destination, layoutMode, onBellSelected, onBatchAddComplete, popNavigation in
+            destination: { destination, layoutMode, onItemSelected, onBatchAddComplete, popNavigation in
                 destinationView(
                     for: destination,
                     layoutMode: layoutMode,
-                    onBellSelected: onBellSelected,
+                    onItemSelected: onItemSelected,
                     onBatchAddComplete: onBatchAddComplete,
                     popNavigation: popNavigation
                 )
@@ -112,27 +114,27 @@ struct AppShellView: View {
     private func destinationView(
         for destination: AppDestination,
         layoutMode: Binding<CatalogCardLayoutMode>,
-        onBellSelected: ((UUID) -> Void)?,
-        onBatchAddComplete: @escaping (BatchAddCompletionAction) -> Void,
+        onItemSelected: ((UUID) -> Void)?,
+        onBatchAddComplete: @escaping BatchCompletionHandler,
         popNavigation: @escaping () -> Void
     ) -> some View {
         switch destination {
         case .collection(let collectionID):
             if let collection = collectionSummary(for: collectionID) {
-                CollectionShellView(
+                makeCollectionDestinationContent(
                     collection: collection,
                     catalogSnapshot: catalogSnapshot,
                     repository: repository,
                     coreDataContainer: coreDataContainer,
                     layoutMode: layoutMode,
-                    onBellSelected: onBellSelected,
+                    onItemSelected: onItemSelected,
                     onBatchAddComplete: onBatchAddComplete
                 )
             } else {
                 CatalogEmptyStateView(
                     systemImage: "square.grid.2x2",
-                    title: "Collection not found",
-                    message: "This collection is no longer available."
+                    title: "collection.not_found.title",
+                    message: "collection.not_found.message"
                 )
             }
         case .home(let homeID):
@@ -266,7 +268,7 @@ struct AppShellView: View {
 }
 
 private struct RootShellView<Destination: View>: View {
-    let repository: any CatalogRepository
+    let repository: any AppRepository
     let catalogSnapshot: CatalogSnapshot?
     @Binding var selectedRootTab: RootTab
     @Binding var collectionsPath: NavigationPath
@@ -274,12 +276,12 @@ private struct RootShellView<Destination: View>: View {
     @Binding var settingsPath: NavigationPath
     @Binding var searchPath: NavigationPath
     @Binding var displayName: String?
-    let destination: (AppDestination, Binding<CatalogCardLayoutMode>, ((UUID) -> Void)?, @escaping (BatchAddCompletionAction) -> Void, @escaping () -> Void) -> Destination
+    let destination: (AppDestination, Binding<CatalogCardLayoutMode>, ((UUID) -> Void)?, @escaping BatchCompletionHandler, @escaping () -> Void) -> Destination
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("bellCatalog.layoutMode") private var layoutModeRawValue = CatalogCardLayoutMode.mini.rawValue
     @State private var searchInitialQuery: String?
     @State private var searchResetID = UUID()
-    @State private var selectedBellID: UUID?
+    @State private var selectedItemID: UUID?
 
     private var layoutMode: CatalogCardLayoutMode {
         get {
@@ -297,12 +299,12 @@ private struct RootShellView<Destination: View>: View {
         )
     }
 
-    private var isBellInspectorPresented: Binding<Bool> {
+    private var isItemDetailPresented: Binding<Bool> {
         Binding(
-            get: { selectedBellID != nil },
+            get: { selectedItemID != nil },
             set: { isPresented in
                 if !isPresented {
-                    selectedBellID = nil
+                    selectedItemID = nil
                 }
             }
         )
@@ -329,44 +331,58 @@ private struct RootShellView<Destination: View>: View {
 
     private var iPhoneRootContainer: some View {
         TabView(selection: $selectedRootTab) {
-            Tab(RootTab.collections.title, systemImage: RootTab.collections.systemImage, value: RootTab.collections) {
-                collectionsStack(path: $collectionsPath, onBellSelected: nil)
+            Tab(RootTab.collections.title, image: "ProductSymbol", value: RootTab.collections) {
+                collectionsStack(path: $collectionsPath, onItemSelected: openItemDetail)
             }
 
             Tab(RootTab.homes.title, systemImage: RootTab.homes.systemImage, value: RootTab.homes) {
-                homesStack(path: $homesPath, onBellSelected: nil)
+                homesStack(path: $homesPath, onItemSelected: openItemDetail)
             }
 
             Tab(RootTab.settings.title, systemImage: RootTab.settings.systemImage, value: RootTab.settings) {
-                settingsStack(path: $settingsPath, onBellSelected: nil)
+                settingsStack(path: $settingsPath, onItemSelected: openItemDetail)
             }
 
             Tab(value: RootTab.search, role: .search) {
                 NavigationStack(path: $searchPath) {
-                    SearchTabView(
+                    SearchView(
                         repository: repository,
                         layoutMode: layoutModeBinding,
                         catalogSnapshot: catalogSnapshot,
-                        initialQuery: searchInitialQuery
+                        initialQuery: searchInitialQuery,
+                        onItemSelected: openItemDetail
                     )
                     .id(searchResetID)
                 }
             }
         }
         .modifier(ModernTabBarBehavior())
+        .sheet(isPresented: isItemDetailPresented) {
+            if let selectedItemID {
+                makeItemDetailContent(
+                    itemID: selectedItemID,
+                    repository: repository,
+                    catalogSnapshot: catalogSnapshot,
+                    onClose: nil
+                )
+                .id(selectedItemID)
+                .presentationDragIndicator(.visible)
+            }
+        }
     }
 
     private var iPadRootContainer: some View {
         iPadSplitView
             .navigationSplitViewStyle(.balanced)
-            .inspector(isPresented: isBellInspectorPresented) {
-                if let selectedBellID {
-                    BellDetailInspectorView(
-                        bellID: selectedBellID,
+            .inspector(isPresented: isItemDetailPresented) {
+                if let selectedItemID {
+                    makeItemDetailContent(
+                        itemID: selectedItemID,
                         repository: repository,
                         catalogSnapshot: catalogSnapshot,
-                        onClose: closeBellInspector
+                        onClose: closeItemDetail
                     )
+                    .id(selectedItemID)
                     .inspectorColumnWidth(min: 320, ideal: 360, max: 420)
                 } else {
                     EmptyView()
@@ -382,7 +398,7 @@ private struct RootShellView<Destination: View>: View {
             }
             .navigationTitle(RootTab.collections.title)
             .onChange(of: selectedRootTab) { _, _ in
-                closeBellInspector()
+                closeItemDetail()
             }
         } detail: {
             iPadContent(for: selectedRootTab)
@@ -393,28 +409,28 @@ private struct RootShellView<Destination: View>: View {
     private func iPadContent(for tab: RootTab) -> some View {
         switch tab {
         case .collections:
-            collectionsStack(path: $collectionsPath, onBellSelected: openBellInspector)
+            collectionsStack(path: $collectionsPath, onItemSelected: openItemDetail)
         case .homes:
-            homesStack(path: $homesPath, onBellSelected: openBellInspector)
+            homesStack(path: $homesPath, onItemSelected: openItemDetail)
         case .search:
             NavigationStack(path: $searchPath) {
-                SearchTabView(
+                SearchView(
                     repository: repository,
                     layoutMode: layoutModeBinding,
                     catalogSnapshot: catalogSnapshot,
                     initialQuery: searchInitialQuery,
-                    onBellSelected: openBellInspector
+                    onItemSelected: openItemDetail
                 )
                 .id(searchResetID)
             }
         case .settings:
-            settingsStack(path: $settingsPath, onBellSelected: openBellInspector)
+            settingsStack(path: $settingsPath, onItemSelected: openItemDetail)
         }
     }
 
     private func homesStack(
         path: Binding<NavigationPath>,
-        onBellSelected: ((UUID) -> Void)?
+        onItemSelected: ((UUID) -> Void)?
     ) -> some View {
         NavigationStack(path: path) {
             HomeView(
@@ -424,14 +440,14 @@ private struct RootShellView<Destination: View>: View {
                 catalogSnapshot: catalogSnapshot
             )
             .navigationDestination(for: AppDestination.self) { destination in
-                self.destination(destination, layoutModeBinding, onBellSelected, handleBatchAddCompletion, popHomesNavigation)
+                self.destination(destination, layoutModeBinding, onItemSelected, handleBatchAddCompletion, popHomesNavigation)
             }
         }
     }
 
     private func collectionsStack(
         path: Binding<NavigationPath>,
-        onBellSelected: ((UUID) -> Void)?
+        onItemSelected: ((UUID) -> Void)?
     ) -> some View {
         NavigationStack(path: path) {
             CollectionsView(
@@ -441,14 +457,14 @@ private struct RootShellView<Destination: View>: View {
                 onOpenHomes: openHomesTab
             )
             .navigationDestination(for: AppDestination.self) { destination in
-                self.destination(destination, layoutModeBinding, onBellSelected, handleBatchAddCompletion, popCollectionsNavigation)
+                self.destination(destination, layoutModeBinding, onItemSelected, handleBatchAddCompletion, popCollectionsNavigation)
             }
         }
     }
 
     private func settingsStack(
         path: Binding<NavigationPath>,
-        onBellSelected: ((UUID) -> Void)?
+        onItemSelected: ((UUID) -> Void)?
     ) -> some View {
         NavigationStack(path: path) {
             SettingsView(
@@ -457,18 +473,25 @@ private struct RootShellView<Destination: View>: View {
                 displayName: $displayName
             )
             .navigationDestination(for: AppDestination.self) { destination in
-                self.destination(destination, layoutModeBinding, onBellSelected, handleBatchAddCompletion, popSettingsNavigation)
+                self.destination(destination, layoutModeBinding, onItemSelected, handleBatchAddCompletion, popSettingsNavigation)
             }
         }
     }
 
-    private func handleBatchAddCompletion(_ action: BatchAddCompletionAction) {
-        guard case .reviewResults(let query) = action else { return }
+    private func handleBatchAddCompletion(_ action: Any) {
+        guard let query = reviewResultsQuery(from: action) else { return }
         searchInitialQuery = query
         searchResetID = UUID()
         selectedRootTab = .search
-        closeBellInspector()
+        closeItemDetail()
         searchPath = NavigationPath()
+    }
+
+    private func reviewResultsQuery(from action: Any) -> String? {
+        guard case "reviewResults" = String(describing: action).split(separator: "(").first else {
+            return nil
+        }
+        return Mirror(reflecting: action).children.first?.value as? String
     }
 
     private func popCollectionsNavigation() {
@@ -493,48 +516,12 @@ private struct RootShellView<Destination: View>: View {
         selectedRootTab = .homes
     }
 
-    private func openBellInspector(_ bellID: UUID) {
-        selectedBellID = bellID
+    private func openItemDetail(_ itemID: UUID) {
+        selectedItemID = itemID
     }
 
-    private func closeBellInspector() {
-        selectedBellID = nil
-    }
-}
-
-private struct BellDetailInspectorView: View {
-    let bellID: UUID
-    let repository: any CatalogRepository
-    let catalogSnapshot: CatalogSnapshot?
-    let onClose: () -> Void
-
-    init(
-        bellID: UUID,
-        repository: any CatalogRepository,
-        catalogSnapshot: CatalogSnapshot?,
-        onClose: @escaping () -> Void
-    ) {
-        self.bellID = bellID
-        self.repository = repository
-        self.catalogSnapshot = catalogSnapshot
-        self.onClose = onClose
-    }
-
-    var body: some View {
-        NavigationStack {
-            BellDetailContainer(
-                bellID: bellID,
-                repository: repository,
-                catalogSnapshot: catalogSnapshot
-            )
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                    }
-                }
-            }
-        }
+    private func closeItemDetail() {
+        selectedItemID = nil
     }
 }
 

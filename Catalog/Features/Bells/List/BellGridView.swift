@@ -6,32 +6,29 @@ struct BellGridView: View {
     let layoutMode: CatalogCardLayoutMode
     let bottomContentMargin: CGFloat?
     let layoutMetrics: CatalogCardGrid<AnyView>.LayoutMetrics?
-    let selectedBellIDs: Set<UUID>
-    let isSelectionModeEnabled: Bool
-    let onTap: (BellListItem) -> Void
-    let onSelect: ((BellListItem) -> Void)?
-    let contextMenu: ((BellListItem) -> AnyView)?
+    @Binding var cardManagement: CatalogCardManagementState<BellListItem>
+    let canManage: Bool
+    let shouldHandleTap: (BellListItem) -> Bool
+    let onOpen: (BellListItem) -> Void
 
     init(
         bells: [BellListItem],
         layoutMode: CatalogCardLayoutMode,
         bottomContentMargin: CGFloat? = nil,
         layoutMetrics: CatalogCardGrid<AnyView>.LayoutMetrics? = nil,
-        selectedBellIDs: Set<UUID>,
-        isSelectionModeEnabled: Bool,
-        onTap: @escaping (BellListItem) -> Void,
-        onSelect: ((BellListItem) -> Void)?,
-        contextMenu: ((BellListItem) -> AnyView)? = nil
+        cardManagement: Binding<CatalogCardManagementState<BellListItem>>,
+        canManage: Bool,
+        shouldHandleTap: @escaping (BellListItem) -> Bool = { _ in true },
+        onOpen: @escaping (BellListItem) -> Void
     ) {
         self.bells = bells
         self.layoutMode = layoutMode
         self.bottomContentMargin = bottomContentMargin
         self.layoutMetrics = layoutMetrics
-        self.selectedBellIDs = selectedBellIDs
-        self.isSelectionModeEnabled = isSelectionModeEnabled
-        self.onTap = onTap
-        self.onSelect = onSelect
-        self.contextMenu = contextMenu
+        self._cardManagement = cardManagement
+        self.canManage = canManage
+        self.shouldHandleTap = shouldHandleTap
+        self.onOpen = onOpen
     }
 
     var body: some View {
@@ -41,71 +38,24 @@ struct BellGridView: View {
             layoutMetrics: layoutMetrics
         ) { cardSize, _, cardMetrics in
             ForEach(bells, id: \.id) { bell in
-                bellCardButton(bell, cardSize: cardSize, cardMetrics: cardMetrics)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func bellCardButton(
-        _ bell: BellListItem,
-        cardSize: CGSize,
-        cardMetrics: CatalogCardLayoutMode.CardMetrics
-    ) -> some View {
-        let isSelected = selectedBellIDs.contains(bell.id)
-        let shouldShowSelectionOverlay = isSelectionModeEnabled && isSelected
-        let style = CatalogCardContentStyle.style(for: layoutMode)
-
-        let button = Button {
-            onTap(bell)
-        } label: {
-            BellCardView(
-                bell: bell,
-                style: style,
-                cardSize: cardSize,
-                cardMetrics: cardMetrics
-            )
-            .overlay {
-                if shouldShowSelectionOverlay {
-                    CatalogShapes.medium
-                        .fill(CatalogMediaContrast.scrimMedium)
-                        .allowsHitTesting(false)
+                CatalogInteractiveCard(
+                    item: bell,
+                    state: $cardManagement,
+                    cardSize: cardSize,
+                    canManage: canManage,
+                    shouldHandleTap: shouldHandleTap,
+                    onOpen: onOpen,
+                    selectTitle: String(localized: "bell.context.select"),
+                    moveTitle: String(localized: "bell.context.move")
+                ) {
+                    BellCardView(
+                        bell: bell,
+                        style: CatalogCardContentStyle.style(for: layoutMode),
+                        cardSize: cardSize,
+                        cardMetrics: cardMetrics
+                    )
                 }
             }
-            .overlay(alignment: .bottomTrailing) {
-                if shouldShowSelectionOverlay {
-                    Image(systemName: "checkmark")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(CatalogMediaContrast.onMediaPrimary)
-                        .frame(width: 20, height: 20)
-                        .background(CatalogSemanticColors.info, in: Circle())
-                        .overlay {
-                            Circle()
-                                .stroke(CatalogMediaContrast.onMediaPrimary.opacity(0.9), lineWidth: 2)
-                        }
-                        .padding(CatalogMetrics.Spacing.sm)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(width: cardSize.width, height: cardSize.height)
-        .contentShape(Rectangle())
-
-        if let contextMenu {
-            button
-                .contextMenu {
-                    if let onSelect {
-                        Button {
-                            onSelect(bell)
-                        } label: {
-                            Label(String(localized: "bell.context.select"), systemImage: "checkmark.circle")
-                        }
-                    }
-
-                    contextMenu(bell)
-                }
-        } else {
-            button
         }
     }
 }
