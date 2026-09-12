@@ -116,6 +116,6 @@ extension BellCatalogView {
         }
         guard !updatedRecords.isEmpty else { return }
 
-        (repository as! any BellCatalogRepository).saveBellRecords(updatedRecords)
+        repository.saveBellRecords(updatedRecords)
     }
 }
