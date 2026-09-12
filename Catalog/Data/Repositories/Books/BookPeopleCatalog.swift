@@ -25,31 +25,13 @@ extension CoreDataCatalogRepository {
 
     @discardableResult
     func upsertCatalogPerson(_ person: Person) -> NSManagedObject {
-        let collectionRequest = NSFetchRequest<NSManagedObject>(entityName: "CollectionEntity")
-        collectionRequest.predicate = NSPredicate(format: "id == %@", person.collectionID as NSUUID)
-        collectionRequest.fetchLimit = 1
+        let collection = requireCollectionEntity(id: person.collectionID)
+        let entity = collectionOwnedEntity(
+            named: "PersonEntity",
+            id: person.id,
+            in: collection
+        )
 
-        guard let collection = (try? context.fetch(collectionRequest))?.first else {
-            preconditionFailure("Person collection does not exist.")
-        }
-
-        let request = NSFetchRequest<NSManagedObject>(entityName: "PersonEntity")
-        request.predicate = NSPredicate(format: "id == %@", person.id as NSUUID)
-        request.fetchLimit = 1
-
-        let existingEntity = (try? context.fetch(request))?.first
-        if let existingCollection = existingEntity?.value(forKey: "collection") as? NSManagedObject,
-           existingCollection != collection {
-            preconditionFailure("PersonEntity cannot be shared across collections.")
-        }
-
-        let entity = existingEntity ?? makeEntity(named: "PersonEntity")
-        if existingEntity == nil,
-           let store = collection.objectID.persistentStore {
-            context.assign(entity, to: store)
-        }
-
-        entity.setValue(person.id, forKey: "id")
         entity.setValue(person.canonicalID, forKey: "canonicalID")
         entity.setValue(person.givenName, forKey: "givenName")
         entity.setValue(person.familyName, forKey: "familyName")
@@ -59,20 +41,17 @@ extension CoreDataCatalogRepository {
         entity.setValue(person.biography, forKey: "biography")
         entity.setValue(person.birthPlace, forKey: "birthPlace")
         entity.setValue(person.deathPlace, forKey: "deathPlace")
-        entity.setValue(collection, forKey: "collection")
         replacePersonPhotos(person.photos, for: entity)
         return entity
     }
 
     private func propagatePerson(_ person: Person) {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "PersonEntity")
-        request.predicate = NSPredicate(
-            format: "canonicalID == %@ AND id != %@",
-            person.canonicalID as NSUUID,
-            person.id as NSUUID
+        let copies = canonicalCopies(
+            named: "PersonEntity",
+            canonicalID: person.canonicalID,
+            excluding: person.id
         )
 
-        let copies = (try? context.fetch(request)) ?? []
         for copy in copies {
             guard
                 let id = copy.value(forKey: "id") as? UUID,
@@ -149,7 +128,7 @@ extension CoreDataCatalogRepository {
                let store = person.objectID.persistentStore {
                 context.assign(entity, to: store)
             }
-            applyReferencePhoto(photo.with(sortOrder: index), to: entity)
+            applyReferenceMediaAsset(photo.with(sortOrder: index), to: entity)
             entity.setValue(person, forKey: "person")
             return entity
         }
@@ -165,29 +144,6 @@ extension CoreDataCatalogRepository {
         }
 
         person.setValue(Set(updatedPhotos), forKey: "photos")
-    }
-
-    private func applyReferencePhoto(_ asset: MediaAsset, to entity: NSManagedObject) {
-        let isNewEntity = entity.value(forKey: "id") == nil
-        let existingChecksum = entity.value(forKey: "checksum") as? String
-        let shouldUpdateOriginalData = isNewEntity || existingChecksum != asset.checksum
-
-        entity.setValue(asset.id, forKey: "id")
-        entity.setValue(asset.kind.rawValue, forKey: "kind")
-        entity.setValue(asset.localIdentifier, forKey: "localIdentifier")
-        entity.setValue(asset.displayName, forKey: "displayName")
-        entity.setValue(asset.sortOrder, forKey: "sortOrder")
-        entity.setValue(asset.fileName, forKey: "fileName")
-        entity.setValue(asset.mimeType, forKey: "mimeType")
-        entity.setValue(asset.byteSize, forKey: "byteSize")
-        entity.setValue(asset.checksum, forKey: "checksum")
-        entity.setValue(asset.width, forKey: "width")
-        entity.setValue(asset.height, forKey: "height")
-        entity.setValue(asset.duration, forKey: "duration")
-        entity.setValue(asset.metadataJSON, forKey: "metadataJSON")
-        if shouldUpdateOriginalData {
-            entity.setValue(asset.originalData, forKey: "originalData")
-        }
     }
 
     private func personRelatedObjects(_ entity: NSManagedObject, _ key: String) -> [NSManagedObject] {
