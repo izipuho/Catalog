@@ -372,7 +372,7 @@ final class CoreDataCatalogRepository: CatalogRepository {
         item.setValue(Set(updatedAssets), forKey: "mediaAssets")
     }
 
-    private func apply(_ asset: MediaAsset, to entity: NSManagedObject) {
+    func apply(_ asset: MediaAsset, to entity: NSManagedObject) {
         let isNewEntity = entity.value(forKey: "id") == nil
         let existingChecksum = entity.value(forKey: "checksum") as? String
         let shouldUpdateOriginalData = isNewEntity || existingChecksum != asset.checksum
@@ -419,7 +419,7 @@ final class CoreDataCatalogRepository: CatalogRepository {
         NSEntityDescription.insertNewObject(forEntityName: entityName, into: context)
     }
 
-    private func fetchEntity(named entityName: String, by id: UUID) -> NSManagedObject? {
+    func fetchEntity(named entityName: String, by id: UUID) -> NSManagedObject? {
         fetchEntities(named: entityName, predicate: NSPredicate(format: "id == %@", id as NSUUID), fetchLimit: 1).first
     }
 
@@ -565,7 +565,7 @@ final class CoreDataCatalogRepository: CatalogRepository {
         )
     }
 
-    private func relatedObjects(_ entity: NSManagedObject, _ key: String) -> [NSManagedObject] {
+    func relatedObjects(_ entity: NSManagedObject, _ key: String) -> [NSManagedObject] {
         if let objects = entity.value(forKey: key) as? Set<NSManagedObject> {
             return Array(objects)
         }
@@ -596,7 +596,7 @@ final class CoreDataCatalogRepository: CatalogRepository {
         }
     }
 
-    private func fetchEntities(
+    func fetchEntities(
         named entityName: String,
         predicate: NSPredicate? = nil,
         fetchLimit: Int = 0,

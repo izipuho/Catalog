@@ -19,16 +19,12 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
     }
 
     func deleteBookSeries(seriesID: UUID) {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "BookSeriesEntity")
-        request.predicate = NSPredicate(format: "id == %@", seriesID as NSUUID)
-        request.fetchLimit = 1
+        guard let seriesEntity = fetchEntity(named: "BookSeriesEntity", by: seriesID) else { return }
 
-        guard let seriesEntity = (try? context.fetch(request))?.first else { return }
-
-        let booksRequest = NSFetchRequest<NSManagedObject>(entityName: "BookEntity")
-        booksRequest.predicate = NSPredicate(format: "series == %@", seriesEntity)
-        let books = (try? context.fetch(booksRequest)) ?? []
-
+        let books = fetchEntities(
+            named: "BookEntity",
+            predicate: NSPredicate(format: "series == %@", seriesEntity)
+        )
         for book in books {
             book.setValue(nil, forKey: "series")
             book.setValue(nil, forKey: "volumeNumber")
@@ -45,16 +41,17 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
     }
 
     func deletePublisher(publisherID: UUID) {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "PublisherEntity")
-        request.predicate = NSPredicate(format: "id == %@", publisherID as NSUUID)
-        let publishers = (try? context.fetch(request)) ?? []
+        let publishers = fetchEntities(
+            named: "PublisherEntity",
+            predicate: NSPredicate(format: "id == %@", publisherID as NSUUID)
+        )
         guard !publishers.isEmpty else { return }
 
         for publisher in publishers {
-            bookRelatedObjects(publisher, "books").forEach {
+            relatedObjects(publisher, "books").forEach {
                 $0.setValue(nil, forKey: "publisher")
             }
-            bookRelatedObjects(publisher, "bookSeries").forEach {
+            relatedObjects(publisher, "bookSeries").forEach {
                 $0.setValue(nil, forKey: "publisher")
             }
             if let logo = publisher.value(forKey: "logo") as? NSManagedObject {
@@ -236,7 +233,7 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
             }
         }
 
-        applyReferenceMediaAsset(logo.with(sortOrder: 0), to: logoEntity)
+        apply(logo.with(sortOrder: 0), to: logoEntity)
         logoEntity.setValue(publisher, forKey: "publisher")
         publisher.setValue(logoEntity, forKey: "logo")
     }
@@ -271,7 +268,7 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
             }
         }
 
-        applyReferenceMediaAsset(coverImage.with(sortOrder: 0), to: coverImageEntity)
+        apply(coverImage.with(sortOrder: 0), to: coverImageEntity)
         coverImageEntity.setValue(book, forKey: "book")
         book.setValue(coverImageEntity, forKey: "coverImage")
     }
@@ -283,7 +280,7 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
             preconditionFailure("BookEntity is missing its collection while saving contributors.")
         }
 
-        bookRelatedObjects(book, "contributors").forEach(context.delete)
+        relatedObjects(book, "contributors").forEach(context.delete)
 
         let entities = contributors.map { contributor -> NSManagedObject in
             precondition(
@@ -303,7 +300,7 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
     }
 
     private func replaceBookIdentifiers(_ identifiers: [BookIdentifier], for book: NSManagedObject) {
-        bookRelatedObjects(book, "bookIdentifiers").forEach(context.delete)
+        relatedObjects(book, "bookIdentifiers").forEach(context.delete)
 
         let entities = identifiers.map { identifier -> NSManagedObject in
             let entity = makeEntity(named: "BookIdentifierEntity")
@@ -317,17 +314,10 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
     }
 
     private func fetchBookEntity(by itemID: UUID) -> NSManagedObject? {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "BookEntity")
-        request.predicate = NSPredicate(format: "item.id == %@", itemID as NSUUID)
-        request.fetchLimit = 1
-        return (try? context.fetch(request))?.first
-    }
-
-    private func bookRelatedObjects(_ entity: NSManagedObject, _ key: String) -> [NSManagedObject] {
-        if let objects = entity.value(forKey: key) as? Set<NSManagedObject> {
-            return Array(objects)
-        }
-
-        return (entity.value(forKey: key) as? NSSet)?.allObjects.compactMap { $0 as? NSManagedObject } ?? []
+        fetchEntities(
+            named: "BookEntity",
+            predicate: NSPredicate(format: "item.id == %@", itemID as NSUUID),
+            fetchLimit: 1
+        ).first
     }
 }

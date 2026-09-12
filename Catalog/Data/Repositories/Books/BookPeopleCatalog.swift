@@ -9,14 +9,15 @@ extension CoreDataCatalogRepository {
     }
 
     func deletePerson(personID: UUID) {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "PersonEntity")
-        request.predicate = NSPredicate(format: "id == %@", personID as NSUUID)
-        let people = (try? context.fetch(request)) ?? []
+        let people = fetchEntities(
+            named: "PersonEntity",
+            predicate: NSPredicate(format: "id == %@", personID as NSUUID)
+        )
         guard !people.isEmpty else { return }
 
         for person in people {
-            personRelatedObjects(person, "bookContributions").forEach(context.delete)
-            personRelatedObjects(person, "photos").forEach(context.delete)
+            relatedObjects(person, "bookContributions").forEach(context.delete)
+            relatedObjects(person, "photos").forEach(context.delete)
             context.delete(person)
         }
 
@@ -83,7 +84,7 @@ extension CoreDataCatalogRepository {
         _ photos: [MediaAsset],
         for person: NSManagedObject
     ) -> [MediaAsset] {
-        let existingPhotos = personRelatedObjects(person, "photos")
+        let existingPhotos = relatedObjects(person, "photos")
             .sorted {
                 CoreDataDomainMapper.intValue($0, "sortOrder")
                     < CoreDataDomainMapper.intValue($1, "sortOrder")
@@ -113,7 +114,7 @@ extension CoreDataCatalogRepository {
     }
 
     private func replacePersonPhotos(_ photos: [MediaAsset], for person: NSManagedObject) {
-        let existingPhotos = Set(personRelatedObjects(person, "photos"))
+        let existingPhotos = Set(relatedObjects(person, "photos"))
         let incomingIDs = Set(photos.map(\.id))
         var existingByID: [UUID: NSManagedObject] = [:]
 
@@ -128,7 +129,7 @@ extension CoreDataCatalogRepository {
                let store = person.objectID.persistentStore {
                 context.assign(entity, to: store)
             }
-            applyReferenceMediaAsset(photo.with(sortOrder: index), to: entity)
+            apply(photo.with(sortOrder: index), to: entity)
             entity.setValue(person, forKey: "person")
             return entity
         }
@@ -144,13 +145,5 @@ extension CoreDataCatalogRepository {
         }
 
         person.setValue(Set(updatedPhotos), forKey: "photos")
-    }
-
-    private func personRelatedObjects(_ entity: NSManagedObject, _ key: String) -> [NSManagedObject] {
-        if let objects = entity.value(forKey: key) as? Set<NSManagedObject> {
-            return Array(objects)
-        }
-
-        return (entity.value(forKey: key) as? NSSet)?.allObjects.compactMap { $0 as? NSManagedObject } ?? []
     }
 }
