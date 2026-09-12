@@ -235,18 +235,19 @@ final class CoreDataCatalogRepository: CatalogRepository {
 
     private func upsertPlace(_ place: Place, in collection: NSManagedObject) -> NSManagedObject {
         let collectionID = uuidValue(collection, "id")
+        let canonicalID = resolvedCanonicalID(for: place, in: collection)
         let existingByID = fetchEntity(named: "PlaceEntity", by: place.id)
         let existingLocal = fetchEntities(
             named: "PlaceEntity",
             predicate: NSPredicate(
                 format: "canonicalID == %@ AND collection == %@",
-                place.canonicalID as NSUUID,
+                canonicalID as NSUUID,
                 collection
             ),
             fetchLimit: 1
         ).first
 
-        let canReusePhysicalID = place.collectionID == collectionID || existingByID == nil
+        let canReusePhysicalID = place.collectionID == collectionID
         let reusableByID: NSManagedObject? = {
             guard canReusePhysicalID, let existingByID else { return nil }
             if let existingCollection = existingByID.value(forKey: "collection") as? NSManagedObject,
@@ -265,7 +266,7 @@ final class CoreDataCatalogRepository: CatalogRepository {
         if entity.value(forKey: "id") == nil {
             entity.setValue(canReusePhysicalID ? place.id : UUID(), forKey: "id")
         }
-        entity.setValue(place.canonicalID, forKey: "canonicalID")
+        entity.setValue(canonicalID, forKey: "canonicalID")
         entity.setValue(place.displayName, forKey: "displayName")
         entity.setValue(place.countryCode, forKey: "countryCode")
         entity.setValue(place.countryName, forKey: "countryName")
@@ -275,6 +276,46 @@ final class CoreDataCatalogRepository: CatalogRepository {
         entity.setValue(place.longitude, forKey: "longitude")
         entity.setValue(collection, forKey: "collection")
         return entity
+    }
+
+    private func resolvedCanonicalID(for place: Place, in collection: NSManagedObject) -> UUID {
+        guard let latitude = place.latitude, let longitude = place.longitude else {
+            return place.canonicalID
+        }
+
+        let localMatches = fetchEntities(
+            named: "PlaceEntity",
+            predicate: NSPredicate(
+                format: "collection == %@ AND latitude == %lf AND longitude == %lf",
+                collection,
+                latitude,
+                longitude
+            )
+        )
+        let localCanonicalIDs = Set(localMatches.compactMap(canonicalPlaceID))
+        if localCanonicalIDs.count == 1, let canonicalID = localCanonicalIDs.first {
+            return canonicalID
+        }
+
+        let globalMatches = fetchEntities(
+            named: "PlaceEntity",
+            predicate: NSPredicate(
+                format: "latitude == %lf AND longitude == %lf",
+                latitude,
+                longitude
+            )
+        )
+        let globalCanonicalIDs = Set(globalMatches.compactMap(canonicalPlaceID))
+        if globalCanonicalIDs.count == 1, let canonicalID = globalCanonicalIDs.first {
+            return canonicalID
+        }
+
+        return place.canonicalID
+    }
+
+    private func canonicalPlaceID(_ entity: NSManagedObject) -> UUID? {
+        guard let id = entity.value(forKey: "id") as? UUID else { return nil }
+        return entity.value(forKey: "canonicalID") as? UUID ?? id
     }
 
     private func replaceTags(_ tags: [String], for item: NSManagedObject) {
