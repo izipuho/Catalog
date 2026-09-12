@@ -48,8 +48,17 @@ enum CoreDataDomainMapper {
     }
 
     static func place(from entity: NSManagedObject) -> Place {
-        Place(
-            id: uuidValue(entity, "id"),
+        precondition(entity.entity.name == "PlaceEntity", "CoreDataDomainMapper.place(from:) expects PlaceEntity.")
+
+        let id = uuidValue(entity, "id")
+        let collectionID = (entity.value(forKey: "collection") as? NSManagedObject).map {
+            uuidValue($0, "id")
+        }
+
+        return Place(
+            id: id,
+            canonicalID: entity.value(forKey: "canonicalID") as? UUID ?? id,
+            collectionID: collectionID,
             displayName: stringValue(entity, "displayName"),
             countryCode: stringValue(entity, "countryCode"),
             countryName: stringValue(entity, "countryName"),
@@ -63,12 +72,19 @@ enum CoreDataDomainMapper {
     static func person(from entity: NSManagedObject) -> Person {
         precondition(entity.entity.name == "PersonEntity", "CoreDataDomainMapper.person(from:) expects PersonEntity.")
 
+        let id = uuidValue(entity, "id")
+        guard let collectionEntity = entity.value(forKey: "collection") as? NSManagedObject else {
+            preconditionFailure("PersonEntity is missing its CollectionEntity relationship.")
+        }
+
         let photos = relatedObjects(entity, "photos")
             .sorted { intValue($0, "sortOrder") < intValue($1, "sortOrder") }
             .map { mediaAsset(from: $0) }
 
         return Person(
-            id: uuidValue(entity, "id"),
+            id: id,
+            canonicalID: entity.value(forKey: "canonicalID") as? UUID ?? id,
+            collectionID: uuidValue(collectionEntity, "id"),
             givenName: stringValue(entity, "givenName"),
             familyName: optionalStringValue(entity, "familyName"),
             middleName: optionalStringValue(entity, "middleName"),

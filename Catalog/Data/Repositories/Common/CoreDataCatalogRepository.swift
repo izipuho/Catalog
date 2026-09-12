@@ -220,38 +220,53 @@ final class CoreDataCatalogRepository: CatalogRepository {
         return upsertItemEntity(for: item, in: collection)
     }
 
-    func makePersonEntity(from person: Person) -> NSManagedObject {
-        let entity = makeEntity(named: "PersonEntity")
-        entity.setValue(person.id, forKey: "id")
-        entity.setValue(person.givenName, forKey: "givenName")
-        entity.setValue(person.familyName, forKey: "familyName")
-        entity.setValue(person.middleName, forKey: "middleName")
-        entity.setValue(person.birthYear, forKey: "birthYear")
-        entity.setValue(person.deathYear, forKey: "deathYear")
-        entity.setValue(person.biography, forKey: "biography")
-        entity.setValue(person.birthPlace, forKey: "birthPlace")
-        entity.setValue(person.deathPlace, forKey: "deathPlace")
-        return entity
-    }
-
     private func upsertItemEntity(for item: ItemRecord, in collection: NSManagedObject) -> NSManagedObject {
         let entity = fetchEntity(named: "ItemEntity", by: item.id) ?? makeEntity(named: "ItemEntity")
         apply(item, to: entity)
         entity.setValue(collection, forKey: "collection")
 
         let collectionLocation = item.locationID.flatMap { fetchCollectionLocation(in: collection, by: $0) }
-        let sourceLocationID = collectionLocation?.value(forKey: "sourceLocationID") as? UUID
         entity.setValue(collectionLocation, forKey: "collectionLocation")
-        entity.setValue(sourceLocationID.flatMap { fetchEntity(named: "LocationEntity", by: $0) }, forKey: "location")
-        entity.setValue(item.originPlace.map(upsertPlace), forKey: "originPlace")
+        entity.setValue(item.originPlace.map { upsertPlace($0, in: collection) }, forKey: "originPlace")
         upsertMediaAssets(item.mediaAssets, for: entity)
         replaceTags(item.tags, for: entity)
         return entity
     }
 
-    private func upsertPlace(_ place: Place) -> NSManagedObject {
-        let entity = fetchEntity(named: "PlaceEntity", by: place.id) ?? makeEntity(named: "PlaceEntity")
-        entity.setValue(place.id, forKey: "id")
+    private func upsertPlace(_ place: Place, in collection: NSManagedObject) -> NSManagedObject {
+        let collectionID = uuidValue(collection, "id")
+        let canonicalID = resolvedCanonicalID(for: place, in: collection)
+        let existingByID = fetchEntity(named: "PlaceEntity", by: place.id)
+        let existingLocal = fetchEntities(
+            named: "PlaceEntity",
+            predicate: NSPredicate(
+                format: "canonicalID == %@ AND collection == %@",
+                canonicalID as NSUUID,
+                collection
+            ),
+            fetchLimit: 1
+        ).first
+
+        let canReusePhysicalID = place.collectionID == collectionID
+        let reusableByID: NSManagedObject? = {
+            guard canReusePhysicalID, let existingByID else { return nil }
+            if let existingCollection = existingByID.value(forKey: "collection") as? NSManagedObject,
+               existingCollection != collection {
+                return nil
+            }
+            return existingByID
+        }()
+
+        let entity = existingLocal ?? reusableByID ?? makeEntity(named: "PlaceEntity")
+        if entity.objectID.persistentStore == nil,
+           let store = collection.objectID.persistentStore {
+            context.assign(entity, to: store)
+        }
+
+        if entity.value(forKey: "id") == nil {
+            entity.setValue(canReusePhysicalID ? place.id : UUID(), forKey: "id")
+        }
+        entity.setValue(canonicalID, forKey: "canonicalID")
         entity.setValue(place.displayName, forKey: "displayName")
         entity.setValue(place.countryCode, forKey: "countryCode")
         entity.setValue(place.countryName, forKey: "countryName")
@@ -259,7 +274,48 @@ final class CoreDataCatalogRepository: CatalogRepository {
         entity.setValue(place.cityName, forKey: "cityName")
         entity.setValue(place.latitude, forKey: "latitude")
         entity.setValue(place.longitude, forKey: "longitude")
+        entity.setValue(collection, forKey: "collection")
         return entity
+    }
+
+    private func resolvedCanonicalID(for place: Place, in collection: NSManagedObject) -> UUID {
+        guard let latitude = place.latitude, let longitude = place.longitude else {
+            return place.canonicalID
+        }
+
+        let localMatches = fetchEntities(
+            named: "PlaceEntity",
+            predicate: NSPredicate(
+                format: "collection == %@ AND latitude == %lf AND longitude == %lf",
+                collection,
+                latitude,
+                longitude
+            )
+        )
+        let localCanonicalIDs = Set(localMatches.compactMap(canonicalPlaceID))
+        if localCanonicalIDs.count == 1, let canonicalID = localCanonicalIDs.first {
+            return canonicalID
+        }
+
+        let globalMatches = fetchEntities(
+            named: "PlaceEntity",
+            predicate: NSPredicate(
+                format: "latitude == %lf AND longitude == %lf",
+                latitude,
+                longitude
+            )
+        )
+        let globalCanonicalIDs = Set(globalMatches.compactMap(canonicalPlaceID))
+        if globalCanonicalIDs.count == 1, let canonicalID = globalCanonicalIDs.first {
+            return canonicalID
+        }
+
+        return place.canonicalID
+    }
+
+    private func canonicalPlaceID(_ entity: NSManagedObject) -> UUID? {
+        guard let id = entity.value(forKey: "id") as? UUID else { return nil }
+        return entity.value(forKey: "canonicalID") as? UUID ?? id
     }
 
     private func replaceTags(_ tags: [String], for item: NSManagedObject) {
@@ -316,7 +372,7 @@ final class CoreDataCatalogRepository: CatalogRepository {
         item.setValue(Set(updatedAssets), forKey: "mediaAssets")
     }
 
-    private func apply(_ asset: MediaAsset, to entity: NSManagedObject) {
+    func apply(_ asset: MediaAsset, to entity: NSManagedObject) {
         let isNewEntity = entity.value(forKey: "id") == nil
         let existingChecksum = entity.value(forKey: "checksum") as? String
         let shouldUpdateOriginalData = isNewEntity || existingChecksum != asset.checksum
@@ -363,7 +419,7 @@ final class CoreDataCatalogRepository: CatalogRepository {
         NSEntityDescription.insertNewObject(forEntityName: entityName, into: context)
     }
 
-    private func fetchEntity(named entityName: String, by id: UUID) -> NSManagedObject? {
+    func fetchEntity(named entityName: String, by id: UUID) -> NSManagedObject? {
         fetchEntities(named: entityName, predicate: NSPredicate(format: "id == %@", id as NSUUID), fetchLimit: 1).first
     }
 
@@ -492,16 +548,6 @@ final class CoreDataCatalogRepository: CatalogRepository {
                 entity.setValue(nil, forKey: "parent")
             }
         }
-
-        backfillItemCollectionLocations(in: collection)
-    }
-
-    private func backfillItemCollectionLocations(in collection: NSManagedObject) {
-        for item in relatedObjects(collection, "items") {
-            guard item.value(forKey: "collectionLocation") == nil else { continue }
-            guard let location = item.value(forKey: "location") as? NSManagedObject else { continue }
-            item.setValue(fetchCollectionLocation(in: collection, by: uuidValue(location, "id")), forKey: "collectionLocation")
-        }
     }
 
     private func clearCollectionLocations(in collection: NSManagedObject) {
@@ -519,7 +565,7 @@ final class CoreDataCatalogRepository: CatalogRepository {
         )
     }
 
-    private func relatedObjects(_ entity: NSManagedObject, _ key: String) -> [NSManagedObject] {
+    func relatedObjects(_ entity: NSManagedObject, _ key: String) -> [NSManagedObject] {
         if let objects = entity.value(forKey: key) as? Set<NSManagedObject> {
             return Array(objects)
         }
@@ -550,7 +596,7 @@ final class CoreDataCatalogRepository: CatalogRepository {
         }
     }
 
-    private func fetchEntities(
+    func fetchEntities(
         named entityName: String,
         predicate: NSPredicate? = nil,
         fetchLimit: Int = 0,

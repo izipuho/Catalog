@@ -3,6 +3,8 @@ import Foundation
 /// Represents person data and behavior.
 struct Person: Identifiable, Hashable, Codable {
     let id: UUID
+    let canonicalID: UUID
+    let collectionID: UUID
     var givenName: String
     var familyName: String?
     var middleName: String?
@@ -44,6 +46,8 @@ struct Person: Identifiable, Hashable, Codable {
 
     init(
         id: UUID,
+        canonicalID: UUID? = nil,
+        collectionID: UUID,
         givenName: String,
         familyName: String? = nil,
         middleName: String? = nil,
@@ -55,6 +59,8 @@ struct Person: Identifiable, Hashable, Codable {
         photos: [MediaAsset] = []
     ) {
         self.id = id
+        self.canonicalID = canonicalID ?? id
+        self.collectionID = collectionID
         self.givenName = Self.normalizedNamePart(givenName) ?? ""
         self.familyName = Self.normalizedNamePart(familyName)
         self.middleName = Self.normalizedNamePart(middleName)

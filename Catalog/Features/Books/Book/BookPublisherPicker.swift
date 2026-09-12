@@ -4,6 +4,7 @@ import SwiftUI
 struct BookPublisherPickerField: View {
     @Binding var selection: Publisher?
     let publishers: [Publisher]
+    let collectionID: UUID
     let statusSystemImage: String?
     let onCreate: (Publisher) -> Void
 
@@ -39,6 +40,7 @@ struct BookPublisherPickerField: View {
             BookPublisherSelectionView(
                 selection: $selection,
                 publishers: publishers,
+                collectionID: collectionID,
                 onCreate: onCreate
             )
         }
@@ -48,6 +50,7 @@ struct BookPublisherPickerField: View {
 private struct BookPublisherSelectionView: View {
     @Binding var selection: Publisher?
     let publishers: [Publisher]
+    let collectionID: UUID
     let onCreate: (Publisher) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -75,6 +78,7 @@ private struct BookPublisherSelectionView: View {
                     Button {
                         let newPublisher = Publisher(
                             id: UUID(),
+                            collectionID: collectionID,
                             name: newPublisherName
                         )
                         onCreate(newPublisher)

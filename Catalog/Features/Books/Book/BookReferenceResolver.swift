@@ -38,8 +38,13 @@ struct BookReferenceResolver {
     }
 
     var availablePublishers: [Publisher] {
-        var uniqueByID = Dictionary(catalogPublishers.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        if let selectedPublisher {
+        var uniqueByID = Dictionary(
+            catalogPublishers
+                .filter { $0.collectionID == collectionID }
+                .map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        if let selectedPublisher, selectedPublisher.collectionID == collectionID {
             uniqueByID[selectedPublisher.id] = selectedPublisher
         }
 
@@ -53,8 +58,13 @@ struct BookReferenceResolver {
     }
 
     var availablePeople: [Person] {
-        var uniqueByID = Dictionary(catalogPeople.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        for contributor in contributors {
+        var uniqueByID = Dictionary(
+            catalogPeople
+                .filter { $0.collectionID == collectionID }
+                .map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for contributor in contributors where contributor.person.collectionID == collectionID {
             uniqueByID[contributor.person.id] = contributor.person
         }
 
@@ -75,8 +85,13 @@ struct BookReferenceResolver {
             return existing
         }
 
+        if let canonical = uniqueMatchingPerson(named: name, in: canonicalPeople) {
+            return materializePerson(canonical)
+        }
+
         return Person(
             id: UUID(),
+            collectionID: collectionID,
             givenName: name,
             birthYear: nil,
             deathYear: nil,
@@ -88,7 +103,17 @@ struct BookReferenceResolver {
     }
 
     func existingCatalogPerson(named rawName: String) -> Person? {
-        uniqueMatchingPerson(named: rawName, in: catalogPeople)
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+
+        if let existing = uniqueMatchingPerson(named: name, in: availablePeople) {
+            return existing
+        }
+
+        guard let canonical = uniqueMatchingPerson(named: name, in: canonicalPeople) else {
+            return nil
+        }
+        return materializePerson(canonical)
     }
 
     func resolvePublisher(named rawName: String) -> Publisher? {
@@ -96,12 +121,18 @@ struct BookReferenceResolver {
         guard !name.isEmpty else { return nil }
 
         let key = normalizedKey(name)
-        if let existing = catalogPublishers.first(where: { normalizedKey($0.name) == key }) {
+        if let existing = availablePublishers.first(where: { normalizedKey($0.name) == key }) {
             return existing
+        }
+
+        let canonicalMatches = canonicalPublishers.filter { normalizedKey($0.name) == key }
+        if canonicalMatches.count == 1, let canonical = canonicalMatches.first {
+            return materializePublisher(canonical)
         }
 
         return Publisher(
             id: UUID(),
+            collectionID: collectionID,
             name: name
         )
     }
@@ -128,14 +159,18 @@ struct BookReferenceResolver {
         switch target {
         case .field(.publisher):
             guard let selectedPublisher else { return nil }
-            return catalogPublishers.contains(where: { $0.id == selectedPublisher.id }) ? .existing : .new
+            return catalogPublishers.contains(where: {
+                $0.canonicalID == selectedPublisher.canonicalID
+            }) ? .existing : .new
         case .field(.series):
             guard let selectedSeries else { return nil }
             return catalogSeries.contains(where: { $0.id == selectedSeries.id }) ? .existing : .new
         case let .author(index):
             guard contributors.indices.contains(index), contributors[index].role == .author else { return nil }
             let person = contributors[index].person
-            return catalogPeople.contains(where: { $0.id == person.id }) ? .existing : .new
+            return catalogPeople.contains(where: {
+                $0.canonicalID == person.canonicalID
+            }) ? .existing : .new
         default:
             return nil
         }
@@ -147,6 +182,105 @@ struct BookReferenceResolver {
             .joined(separator: " ")
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
             .lowercased()
+    }
+
+    private var canonicalPeople: [Person] {
+        var uniqueByCanonicalID: [UUID: Person] = [:]
+
+        for person in catalogPeople {
+            if let existing = uniqueByCanonicalID[person.canonicalID] {
+                if existing.collectionID != collectionID, person.collectionID == collectionID {
+                    uniqueByCanonicalID[person.canonicalID] = person
+                }
+            } else {
+                uniqueByCanonicalID[person.canonicalID] = person
+            }
+        }
+
+        return Array(uniqueByCanonicalID.values)
+    }
+
+    private var canonicalPublishers: [Publisher] {
+        var uniqueByCanonicalID: [UUID: Publisher] = [:]
+
+        for publisher in catalogPublishers {
+            if let existing = uniqueByCanonicalID[publisher.canonicalID] {
+                if existing.collectionID != collectionID, publisher.collectionID == collectionID {
+                    uniqueByCanonicalID[publisher.canonicalID] = publisher
+                }
+            } else {
+                uniqueByCanonicalID[publisher.canonicalID] = publisher
+            }
+        }
+
+        return Array(uniqueByCanonicalID.values)
+    }
+
+    private func materializePerson(_ source: Person) -> Person {
+        if source.collectionID == collectionID {
+            return source
+        }
+
+        if let existing = catalogPeople.first(where: {
+            $0.collectionID == collectionID && $0.canonicalID == source.canonicalID
+        }) {
+            return existing
+        }
+
+        return Person(
+            id: UUID(),
+            canonicalID: source.canonicalID,
+            collectionID: collectionID,
+            givenName: source.givenName,
+            familyName: source.familyName,
+            middleName: source.middleName,
+            birthYear: source.birthYear,
+            deathYear: source.deathYear,
+            biography: source.biography,
+            birthPlace: source.birthPlace,
+            deathPlace: source.deathPlace,
+            photos: source.photos.map(materializeMediaAsset)
+        )
+    }
+
+    private func materializePublisher(_ source: Publisher) -> Publisher {
+        if source.collectionID == collectionID {
+            return source
+        }
+
+        if let existing = catalogPublishers.first(where: {
+            $0.collectionID == collectionID && $0.canonicalID == source.canonicalID
+        }) {
+            return existing
+        }
+
+        return Publisher(
+            id: UUID(),
+            canonicalID: source.canonicalID,
+            collectionID: collectionID,
+            name: source.name,
+            logo: source.logo.map(materializeMediaAsset)
+        )
+    }
+
+    private func materializeMediaAsset(_ source: MediaAsset) -> MediaAsset {
+        MediaAsset(
+            id: UUID(),
+            itemID: nil,
+            kind: source.kind,
+            localIdentifier: UUID().uuidString,
+            displayName: source.displayName,
+            sortOrder: source.sortOrder,
+            fileName: source.fileName,
+            mimeType: source.mimeType,
+            byteSize: source.byteSize,
+            checksum: source.checksum,
+            width: source.width,
+            height: source.height,
+            duration: source.duration,
+            metadataJSON: source.metadataJSON,
+            originalData: source.originalData
+        )
     }
 
     private func uniqueMatchingPerson(named rawName: String, in people: [Person]) -> Person? {

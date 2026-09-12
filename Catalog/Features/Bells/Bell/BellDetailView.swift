@@ -94,6 +94,7 @@ struct BellDetailView: View {
             }
             .sheet(isPresented: $isPresentingOriginPicker) {
                 PlacePickerView(
+                    collectionID: bell.item.collectionID,
                     places: availablePlaces,
                     selectedPlace: originPlaceBinding
                 )
@@ -425,7 +426,7 @@ struct BellDetailView: View {
     }
 
     private var availablePlaces: [Place] {
-        catalogSnapshot?.places ?? []
+        (catalogSnapshot?.places ?? []).filter { $0.collectionID == bell.item.collectionID }
     }
 
     private var inferredCollection: CollectionSummary? {

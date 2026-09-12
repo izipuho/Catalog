@@ -189,6 +189,7 @@ struct BellBatchAddView: View {
                 PlacePickerField(
                     title: String(localized: "common.ui.origin"),
                     selectedLabel: selectedOriginLabel,
+                    collectionID: collection.id,
                     places: availablePlaces,
                     selectedPlace: $selectedOriginPlace
                 )
@@ -312,7 +313,7 @@ struct BellBatchAddView: View {
     }
 
     private var availablePlaces: [Place] {
-        catalogSnapshot?.places ?? []
+        (catalogSnapshot?.places ?? []).filter { $0.collectionID == collection.id }
     }
 
     private var selectedLocationLabel: String {

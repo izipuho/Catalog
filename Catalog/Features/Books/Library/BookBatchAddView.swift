@@ -56,6 +56,7 @@ struct BookBatchAddView: View {
                         create: { name in
                             Person(
                                 id: UUID(),
+                                collectionID: collection.id,
                                 givenName: name,
                                 birthYear: nil,
                                 deathYear: nil,
@@ -77,6 +78,7 @@ struct BookBatchAddView: View {
                         create: { name in
                             Publisher(
                                 id: UUID(),
+                                collectionID: collection.id,
                                 name: name
                             )
                         },
@@ -183,17 +185,17 @@ struct BookBatchAddView: View {
         let bookRecords = snapshot.bookRecords
         let bookSeries = snapshot.bookSeries
 
-        catalogPeople = snapshot.people.sorted(by: namedPersonLessThan)
+        catalogPeople = snapshot.people
+            .filter { $0.collectionID == collection.id }
+            .sorted(by: namedPersonLessThan)
 
         catalogSeries = bookSeries
             .filter { $0.collectionID == collection.id }
             .sorted(by: namedSeriesLessThan)
 
-        var publishersByID: [UUID: Publisher] = [:]
-        for publisher in bookRecords.compactMap(\.details.publisher) + bookSeries.compactMap(\.publisher) {
-            publishersByID[publisher.id] = publisher
-        }
-        catalogPublishers = Array(publishersByID.values).sorted(by: namedPublisherLessThan)
+        catalogPublishers = snapshot.publishers
+            .filter { $0.collectionID == collection.id }
+            .sorted(by: namedPublisherLessThan)
 
         catalogGenreSuggestions = normalizedGenreSuggestions(
             bookRecords

@@ -99,7 +99,7 @@ struct BellEditorView: View {
     }
 
     private var availablePlaces: [Place] {
-        catalogSnapshot?.places ?? []
+        (catalogSnapshot?.places ?? []).filter { $0.collectionID == collection.id }
     }
 
     private var locationPathByID: [UUID: String] {
@@ -392,6 +392,7 @@ struct BellEditorView: View {
                             PlacePickerField(
                                 title: String(localized: "common.ui.origin"),
                                 selectedLabel: selectedOriginLabel,
+                                collectionID: collection.id,
                                 places: availablePlaces,
                                 selectedPlace: $selectedOriginPlace
                             )
@@ -697,6 +698,7 @@ struct BellEditorView: View {
     private func place(from geoPoint: GeoPoint) -> Place {
         Place(
             id: UUID(),
+            collectionID: collection.id,
             displayName: geoPoint.name,
             countryCode: "",
             countryName: geoPoint.name,

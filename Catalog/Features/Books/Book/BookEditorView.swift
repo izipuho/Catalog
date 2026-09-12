@@ -378,6 +378,7 @@ struct BookEditorView: View {
                         BookPublisherPickerField(
                             selection: $editorState.selectedPublisher,
                             publishers: referenceResolver.availablePublishers,
+                            collectionID: collection.id,
                             statusSystemImage: assignedReferenceStatusSystemImage(for: .field(.publisher)),
                             onCreate: { newPublisher in
                                 catalogPublishers.append(newPublisher)
@@ -573,6 +574,7 @@ struct BookEditorView: View {
                     role: contributor?.role ?? .author,
                     person: contributor?.person,
                     people: referenceResolver.availablePeople,
+                    collectionID: collection.id,
                     onCreatePerson: { newPerson in
                         catalogPeople.append(newPerson)
                     },

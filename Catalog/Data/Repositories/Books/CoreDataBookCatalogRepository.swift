@@ -13,29 +13,18 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
     }
 
     func saveBookSeries(_ series: BookSeries) {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "CollectionEntity")
-        request.predicate = NSPredicate(format: "id == %@", series.collectionID as NSUUID)
-        request.fetchLimit = 1
-
-        guard let collection = (try? context.fetch(request))?.first else {
-            preconditionFailure("BookSeries collection does not exist.")
-        }
-
+        let collection = requireCollectionEntity(id: series.collectionID)
         _ = upsertBookSeries(series, forCollection: collection)
         saveContext()
     }
 
     func deleteBookSeries(seriesID: UUID) {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "BookSeriesEntity")
-        request.predicate = NSPredicate(format: "id == %@", seriesID as NSUUID)
-        request.fetchLimit = 1
+        guard let seriesEntity = fetchEntity(named: "BookSeriesEntity", by: seriesID) else { return }
 
-        guard let seriesEntity = (try? context.fetch(request))?.first else { return }
-
-        let booksRequest = NSFetchRequest<NSManagedObject>(entityName: "BookEntity")
-        booksRequest.predicate = NSPredicate(format: "series == %@", seriesEntity)
-        let books = (try? context.fetch(booksRequest)) ?? []
-
+        let books = fetchEntities(
+            named: "BookEntity",
+            predicate: NSPredicate(format: "series == %@", seriesEntity)
+        )
         for book in books {
             book.setValue(nil, forKey: "series")
             book.setValue(nil, forKey: "volumeNumber")
@@ -47,20 +36,22 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
 
     func savePublisher(_ publisher: Publisher) {
         _ = upsertPublisher(publisher)
+        propagatePublisher(publisher)
         saveContext()
     }
 
     func deletePublisher(publisherID: UUID) {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "PublisherEntity")
-        request.predicate = NSPredicate(format: "id == %@", publisherID as NSUUID)
-        let publishers = (try? context.fetch(request)) ?? []
+        let publishers = fetchEntities(
+            named: "PublisherEntity",
+            predicate: NSPredicate(format: "id == %@", publisherID as NSUUID)
+        )
         guard !publishers.isEmpty else { return }
 
         for publisher in publishers {
-            bookRelatedObjects(publisher, "books").forEach {
+            relatedObjects(publisher, "books").forEach {
                 $0.setValue(nil, forKey: "publisher")
             }
-            bookRelatedObjects(publisher, "bookSeries").forEach {
+            relatedObjects(publisher, "bookSeries").forEach {
                 $0.setValue(nil, forKey: "publisher")
             }
             if let logo = publisher.value(forKey: "logo") as? NSManagedObject {
@@ -90,7 +81,16 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
         entity.setValue(item, forKey: "item")
         fillInverseRelationship(from: entity, relationshipName: "item", with: item)
         replaceBookCoverImage(book.details.coverImage, for: entity)
-        entity.setValue(book.details.publisher.map(upsertPublisher), forKey: "publisher")
+        entity.setValue(
+            book.details.publisher.map { publisher in
+                precondition(
+                    publisher.collectionID == book.item.collectionID,
+                    "Publisher collection does not match the book collection."
+                )
+                return upsertPublisher(publisher)
+            },
+            forKey: "publisher"
+        )
         entity.setValue(book.details.series.map { upsertBookSeries($0, for: item) }, forKey: "series")
         replaceContributors(book.details.contributors, for: entity)
         replaceBookIdentifiers(book.details.identifiers, for: entity)
@@ -120,40 +120,91 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
             "BookSeries collection does not match the book collection."
         )
 
-        let request = NSFetchRequest<NSManagedObject>(entityName: "BookSeriesEntity")
-        request.predicate = NSPredicate(format: "id == %@", series.id as NSUUID)
-        request.fetchLimit = 1
-
-        let existingEntity = (try? context.fetch(request))?.first
-        if let existingCollection = existingEntity?.value(forKey: "collection") as? NSManagedObject,
-           existingCollection != collection {
-            preconditionFailure("BookSeriesEntity cannot be shared across collections.")
-        }
-
-        let entity = existingEntity ?? makeEntity(named: "BookSeriesEntity")
-        if existingEntity == nil,
-           let store = collection.objectID.persistentStore {
-            context.assign(entity, to: store)
-        }
-
-        entity.setValue(series.id, forKey: "id")
+        let entity = collectionOwnedEntity(
+            named: "BookSeriesEntity",
+            id: series.id,
+            in: collection
+        )
         entity.setValue(series.name, forKey: "name")
         entity.setValue(series.totalBookCount, forKey: "totalBookCount")
-        entity.setValue(series.publisher.map(upsertPublisher), forKey: "publisher")
-        entity.setValue(collection, forKey: "collection")
+        entity.setValue(
+            series.publisher.map { publisher in
+                precondition(
+                    publisher.collectionID == series.collectionID,
+                    "Publisher collection does not match the series collection."
+                )
+                return upsertPublisher(publisher)
+            },
+            forKey: "publisher"
+        )
         return entity
     }
 
     private func upsertPublisher(_ publisher: Publisher) -> NSManagedObject {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "PublisherEntity")
-        request.predicate = NSPredicate(format: "id == %@", publisher.id as NSUUID)
-        request.fetchLimit = 1
+        let collection = requireCollectionEntity(id: publisher.collectionID)
+        let entity = collectionOwnedEntity(
+            named: "PublisherEntity",
+            id: publisher.id,
+            in: collection
+        )
 
-        let entity = (try? context.fetch(request))?.first ?? makeEntity(named: "PublisherEntity")
-        entity.setValue(publisher.id, forKey: "id")
+        entity.setValue(publisher.canonicalID, forKey: "canonicalID")
         entity.setValue(publisher.name, forKey: "name")
         replacePublisherLogo(publisher.logo, for: entity)
         return entity
+    }
+
+    private func propagatePublisher(_ publisher: Publisher) {
+        let copies = canonicalCopies(
+            named: "PublisherEntity",
+            canonicalID: publisher.canonicalID,
+            excluding: publisher.id
+        )
+
+        for copy in copies {
+            guard
+                let id = copy.value(forKey: "id") as? UUID,
+                let collection = copy.value(forKey: "collection") as? NSManagedObject,
+                let collectionID = collection.value(forKey: "id") as? UUID
+            else {
+                continue
+            }
+
+            let synchronized = Publisher(
+                id: id,
+                canonicalID: publisher.canonicalID,
+                collectionID: collectionID,
+                name: publisher.name,
+                logo: synchronizedPublisherLogo(publisher.logo, for: copy)
+            )
+            _ = upsertPublisher(synchronized)
+        }
+    }
+
+    private func synchronizedPublisherLogo(
+        _ logo: MediaAsset?,
+        for publisher: NSManagedObject
+    ) -> MediaAsset? {
+        guard let logo else { return nil }
+        let existing = publisher.value(forKey: "logo") as? NSManagedObject
+
+        return MediaAsset(
+            id: existing?.value(forKey: "id") as? UUID ?? UUID(),
+            itemID: nil,
+            kind: logo.kind,
+            localIdentifier: existing?.value(forKey: "localIdentifier") as? String ?? UUID().uuidString,
+            displayName: logo.displayName,
+            sortOrder: 0,
+            fileName: logo.fileName,
+            mimeType: logo.mimeType,
+            byteSize: logo.byteSize,
+            checksum: logo.checksum,
+            width: logo.width,
+            height: logo.height,
+            duration: logo.duration,
+            metadataJSON: logo.metadataJSON,
+            originalData: logo.originalData ?? existing?.value(forKey: "originalData") as? Data
+        )
     }
 
     private func replacePublisherLogo(_ logo: MediaAsset?, for publisher: NSManagedObject) {
@@ -182,7 +233,7 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
             }
         }
 
-        applyReferenceMediaAsset(logo.with(sortOrder: 0), to: logoEntity)
+        apply(logo.with(sortOrder: 0), to: logoEntity)
         logoEntity.setValue(publisher, forKey: "publisher")
         publisher.setValue(logoEntity, forKey: "logo")
     }
@@ -217,15 +268,26 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
             }
         }
 
-        applyReferenceMediaAsset(coverImage.with(sortOrder: 0), to: coverImageEntity)
+        apply(coverImage.with(sortOrder: 0), to: coverImageEntity)
         coverImageEntity.setValue(book, forKey: "book")
         book.setValue(coverImageEntity, forKey: "coverImage")
     }
 
     private func replaceContributors(_ contributors: [BookContributor], for book: NSManagedObject) {
-        bookRelatedObjects(book, "contributors").forEach(context.delete)
+        guard let item = book.value(forKey: "item") as? NSManagedObject,
+              let collection = item.value(forKey: "collection") as? NSManagedObject,
+              let collectionID = collection.value(forKey: "id") as? UUID else {
+            preconditionFailure("BookEntity is missing its collection while saving contributors.")
+        }
+
+        relatedObjects(book, "contributors").forEach(context.delete)
 
         let entities = contributors.map { contributor -> NSManagedObject in
+            precondition(
+                contributor.person.collectionID == collectionID,
+                "Person collection does not match the book collection."
+            )
+
             let entity = makeEntity(named: "BookContributorEntity")
             entity.setValue(contributor.role.rawValue, forKey: "role")
             entity.setValue(contributor.order, forKey: "order")
@@ -238,7 +300,7 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
     }
 
     private func replaceBookIdentifiers(_ identifiers: [BookIdentifier], for book: NSManagedObject) {
-        bookRelatedObjects(book, "bookIdentifiers").forEach(context.delete)
+        relatedObjects(book, "bookIdentifiers").forEach(context.delete)
 
         let entities = identifiers.map { identifier -> NSManagedObject in
             let entity = makeEntity(named: "BookIdentifierEntity")
@@ -251,41 +313,11 @@ extension CoreDataCatalogRepository: BookCatalogRepository {
         book.setValue(Set(entities), forKey: "bookIdentifiers")
     }
 
-    private func applyReferenceMediaAsset(_ asset: MediaAsset, to entity: NSManagedObject) {
-        let isNewEntity = entity.value(forKey: "id") == nil
-        let existingChecksum = entity.value(forKey: "checksum") as? String
-        let shouldUpdateOriginalData = isNewEntity || existingChecksum != asset.checksum
-
-        entity.setValue(asset.id, forKey: "id")
-        entity.setValue(asset.kind.rawValue, forKey: "kind")
-        entity.setValue(asset.localIdentifier, forKey: "localIdentifier")
-        entity.setValue(asset.displayName, forKey: "displayName")
-        entity.setValue(asset.sortOrder, forKey: "sortOrder")
-        entity.setValue(asset.fileName, forKey: "fileName")
-        entity.setValue(asset.mimeType, forKey: "mimeType")
-        entity.setValue(asset.byteSize, forKey: "byteSize")
-        entity.setValue(asset.checksum, forKey: "checksum")
-        entity.setValue(asset.width, forKey: "width")
-        entity.setValue(asset.height, forKey: "height")
-        entity.setValue(asset.duration, forKey: "duration")
-        entity.setValue(asset.metadataJSON, forKey: "metadataJSON")
-        if shouldUpdateOriginalData {
-            entity.setValue(asset.originalData, forKey: "originalData")
-        }
-    }
-
     private func fetchBookEntity(by itemID: UUID) -> NSManagedObject? {
-        let request = NSFetchRequest<NSManagedObject>(entityName: "BookEntity")
-        request.predicate = NSPredicate(format: "item.id == %@", itemID as NSUUID)
-        request.fetchLimit = 1
-        return (try? context.fetch(request))?.first
-    }
-
-    private func bookRelatedObjects(_ entity: NSManagedObject, _ key: String) -> [NSManagedObject] {
-        if let objects = entity.value(forKey: key) as? Set<NSManagedObject> {
-            return Array(objects)
-        }
-
-        return (entity.value(forKey: key) as? NSSet)?.allObjects.compactMap { $0 as? NSManagedObject } ?? []
+        fetchEntities(
+            named: "BookEntity",
+            predicate: NSPredicate(format: "item.id == %@", itemID as NSUUID),
+            fetchLimit: 1
+        ).first
     }
 }
